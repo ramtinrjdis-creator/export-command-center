@@ -39,6 +39,88 @@ export type MarketIntelligenceInput = {
   originShare: number | null;
 };
 
+export type MarketComparison = {
+  demand: "strong" | "moderate" | "weak";
+  growth: "strong" | "positive" | "stable" | "negative" | "unknown";
+  evidence: "strong" | "moderate" | "limited" | "unavailable";
+  originSignal: "recorded" | "no_record" | "unavailable";
+  summary: string;
+  factors: string[];
+};
+
+export function compareMarket(input: MarketIntelligenceInput): MarketComparison {
+  const demand =
+    input.demandScore >= 70
+      ? "strong"
+      : input.demandScore >= 40
+        ? "moderate"
+        : "weak";
+
+  const growth =
+    input.growthRate === null
+      ? "unknown"
+      : input.growthRate >= 10
+        ? "strong"
+        : input.growthRate >= 0
+          ? "positive"
+          : input.growthRate >= -10
+            ? "stable"
+            : "negative";
+
+  const originSignal =
+    input.originExportStatus === "recorded"
+      ? "recorded"
+      : input.originExportStatus === "no_record"
+        ? "no_record"
+        : "unavailable";
+
+  const factors: string[] = [];
+
+  if (demand === "strong") factors.push("High relative import demand.");
+  else if (demand === "moderate") factors.push("Moderate relative import demand.");
+  else factors.push("Low relative import demand.");
+
+  if (growth === "strong") factors.push("Import demand is growing strongly.");
+  else if (growth === "positive") factors.push("Import demand is growing.");
+  else if (growth === "stable") factors.push("Import demand is relatively stable.");
+  else if (growth === "negative") factors.push("Import demand is declining.");
+  else factors.push("Growth evidence is unavailable.");
+
+  const evidence =
+    input.importValue <= 0
+      ? "unavailable"
+      : input.previousImportValue === null
+        ? "limited"
+        : input.originExportStatus === "recorded"
+          ? "strong"
+          : "moderate";
+
+  if (evidence === "strong") factors.push("Evidence coverage is strong.");
+  else if (evidence === "moderate") factors.push("Evidence coverage is moderate.");
+  else if (evidence === "limited") factors.push("Evidence coverage is limited.");
+  else factors.push("Evidence coverage is unavailable.");
+
+  if (originSignal === "recorded") factors.push("Origin-specific exports are recorded.");
+  else if (originSignal === "no_record") factors.push("No origin-specific export record was found.");
+  else factors.push("Origin-specific evidence is unavailable.");
+
+  const summary =
+    demand === "strong" && (growth === "strong" || growth === "positive") && evidence === "strong"
+      ? "Strong demand and growth signals with solid evidence."
+      : demand === "weak" || growth === "negative"
+        ? "Current demand signals require caution before prioritization."
+        : "The market shows mixed signals and should be validated further.";
+
+  return {
+    demand,
+    growth,
+    evidence,
+    originSignal,
+    summary,
+    factors,
+  };
+}
+
 export type MarketIntelligence = {
   marketPriority: MarketPriority;
   evidenceScore: number;
