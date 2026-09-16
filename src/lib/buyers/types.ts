@@ -8,6 +8,7 @@ export type BuyerSearchInput = {
 export type BuyerRecord = {
   id: string;
   companyName: string;
+  companyLink: string | null;
   countryCode: number;
   country: string | null;
   shipmentCount: number | null;

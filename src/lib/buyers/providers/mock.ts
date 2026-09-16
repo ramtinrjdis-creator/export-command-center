@@ -24,6 +24,7 @@ export class MockBuyerProvider implements BuyerDataProvider {
         {
           id: "dev-buyer-001",
           companyName: "Development Buyer",
+      companyLink: "https://example.com/development-buyer",
           countryCode: 276,
           country: "Germany",
           shipmentCount: 24,

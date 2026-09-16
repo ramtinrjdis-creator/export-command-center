@@ -3,6 +3,7 @@ import type { BuyerRecord } from "./types";
 export type BuyerProviderPayload = {
   id?: string | null;
   companyName?: string | null;
+  companyLink?: string | null;
   countryCode?: number | null;
   country?: string | null;
   shipmentCount?: number | null;
@@ -23,6 +24,7 @@ export function normalizeBuyer(
   return {
     id: payload.id?.trim() || `${provider}-unknown`,
     companyName: payload.companyName?.trim() || "Unknown company",
+    companyLink: payload.companyLink?.trim() || null,
     countryCode:
       typeof payload.countryCode === "number"
         ? payload.countryCode

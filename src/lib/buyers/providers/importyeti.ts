@@ -150,6 +150,7 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
             {
               id: normalizeCompanyId(companyName, index),
               companyName,
+              companyLink: row.company_link?.trim() || null,
               countryCode: 840,
               country: "United States",
               shipmentCount: totalShipments,
