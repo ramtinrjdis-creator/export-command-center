@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBuyerProvider } from "@/lib/buyers";
 import { analyzeBuyer } from "@/lib/buyers/intelligence";
 import { evaluateBuyerEvidence } from "@/lib/buyers/evidence";
+import { buildBuyerSummary } from "@/lib/buyers/summary";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -35,11 +36,9 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const analyzedBuyers = result.buyers.map((buyer) => ({
-    ...buyer,
-    intelligence: analyzeBuyer(buyer),
-    evidence: evaluateBuyerEvidence(buyer),
-  }));
+  const analyzedBuyers = result.buyers.map((buyer) =>
+    buildBuyerSummary(buyer)
+  );
 
   return NextResponse.json({
     available: true,
