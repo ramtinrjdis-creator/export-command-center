@@ -16,7 +16,20 @@ export type BuyerRecord = {
   evidenceStatus: "strong" | "moderate" | "limited";
 };
 
+export type BuyerProviderResult =
+  | {
+      status: "available";
+      buyers: BuyerRecord[];
+    }
+  | {
+      status: "unavailable";
+      buyers: [];
+      reason: "missing_credentials" | "provider_error";
+    };
+
 export interface BuyerDataProvider {
   name: string;
-  searchBuyers(input: BuyerSearchInput): Promise<BuyerRecord[]>;
+  searchBuyers(
+    input: BuyerSearchInput
+  ): Promise<BuyerProviderResult>;
 }

@@ -1,6 +1,6 @@
 import type { BuyerDataProvider } from "./types";
-import { UnavailableBuyerProvider } from "./unavailable";
+import { getConfiguredBuyerProvider } from "./providers";
 
 export function getBuyerProvider(): BuyerDataProvider {
-  return new UnavailableBuyerProvider();
+  return getConfiguredBuyerProvider();
 }
