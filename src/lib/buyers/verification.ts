@@ -19,47 +19,87 @@ export function verifyBuyer(
   const verifiedSignals: string[] = [];
   const missingSignals: string[] = [];
 
+  // Company identity: a name is necessary context, but not independent verification.
   if (buyer.companyName.trim()) {
+    score += 10;
+    verifiedSignals.push("Company name is available.");
+  } else {
+    missingSignals.push("Company name is unavailable.");
+  }
+
+  // A provider-supplied company link is stronger identity evidence.
+  if (buyer.companyLink) {
     score += 25;
-    verifiedSignals.push("Company identity is available.");
+    verifiedSignals.push("A company record link is available.");
   } else {
-    missingSignals.push("Company identity is unavailable.");
+    missingSignals.push("Company record link is unavailable.");
   }
 
-  if (buyer.country) {
-    score += 15;
-    verifiedSignals.push("Company country is available.");
+  // Product-specific shipment activity is the key behavioral verification signal.
+  if (buyer.matchingShipments !== null) {
+    if (buyer.matchingShipments >= 20) {
+      score += 30;
+      verifiedSignals.push(
+        "Strong product-matched shipment activity is recorded."
+      );
+    } else if (buyer.matchingShipments >= 5) {
+      score += 22;
+      verifiedSignals.push(
+        "Meaningful product-matched shipment activity is recorded."
+      );
+    } else if (buyer.matchingShipments > 0) {
+      score += 12;
+      verifiedSignals.push(
+        "Product-matched shipment activity is recorded."
+      );
+    } else {
+      missingSignals.push(
+        "No product-matched shipment activity is recorded."
+      );
+    }
   } else {
-    missingSignals.push("Company country is unavailable.");
+    missingSignals.push(
+      "Product-matched shipment activity is unavailable."
+    );
   }
 
+  // Lifetime shipment activity is supporting evidence only.
   if (buyer.shipmentCount !== null && buyer.shipmentCount > 0) {
-    score += 30;
-    verifiedSignals.push("Shipment activity is recorded.");
+    score += 10;
+    verifiedSignals.push("Overall shipment activity is recorded.");
   } else {
-    missingSignals.push("Shipment activity is unavailable.");
+    missingSignals.push("Overall shipment activity is unavailable.");
   }
 
+  // Recent shipment evidence helps establish that the buyer is not only historical.
   if (buyer.lastShipmentDate) {
     score += 15;
-    verifiedSignals.push("Shipment date evidence is available.");
+    verifiedSignals.push("Recent shipment date evidence is available.");
   } else {
-    missingSignals.push("Shipment date evidence is unavailable.");
+    missingSignals.push("Recent shipment date evidence is unavailable.");
   }
 
-  if (buyer.productMatch) {
-    score += 15;
-    verifiedSignals.push("Product match evidence is available.");
-  } else {
-    missingSignals.push("Product match evidence is unavailable.");
+  // Product-match text alone is not treated as independent verification.
+  if (!buyer.productMatch) {
+    missingSignals.push("Product match description is unavailable.");
   }
 
-  score = Math.min(100, score);
+  score = Math.min(100, Math.round(score));
+
+  // Verified requires multiple independent evidence layers.
+  const hasCompanyLink = Boolean(buyer.companyLink);
+  const hasProductActivity =
+    buyer.matchingShipments !== null &&
+    buyer.matchingShipments > 0;
+  const hasRecentActivity = Boolean(buyer.lastShipmentDate);
 
   const status: BuyerVerificationStatus =
-    score >= 80
+    hasCompanyLink &&
+    hasProductActivity &&
+    hasRecentActivity &&
+    score >= 75
       ? "verified"
-      : score >= 50
+      : score >= 45
         ? "partially-verified"
         : "unverified";
 

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBuyerProvider } from "@/lib/buyers";
-import { analyzeBuyer } from "@/lib/buyers/intelligence";
-import { evaluateBuyerEvidence } from "@/lib/buyers/evidence";
 import { buildBuyerSummary } from "@/lib/buyers/summary";
 
 export async function GET(request: NextRequest) {
@@ -13,15 +11,26 @@ export async function GET(request: NextRequest) {
   const limit = Number(searchParams.get("limit") ?? "20");
 
   if (!/^[0-9]{2,6}$/.test(hsCode)) {
-    return NextResponse.json({ error: "hsCode must be 2-6 digits." }, { status: 400 });
+    return NextResponse.json(
+      { error: "hsCode must be 2-6 digits." },
+      { status: 400 }
+    );
   }
 
   if (!Number.isInteger(market) || market < 0) {
-    return NextResponse.json({ error: "market must be a valid country code." }, { status: 400 });
+    return NextResponse.json(
+      { error: "market must be a valid country code." },
+      { status: 400 }
+    );
   }
 
-  const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 20;
+  const safeLimit =
+    Number.isInteger(limit) && limit > 0
+      ? Math.min(limit, 100)
+      : 20;
+
   const provider = getBuyerProvider();
+
   const result = await provider.searchBuyers({
     hsCode,
     marketCountryCode: market,
@@ -38,7 +47,15 @@ export async function GET(request: NextRequest) {
       hsCode,
       marketCountryCode: market,
       buyers: [],
-      summary: { total: 0, highSignal: 0, mediumSignal: 0, lowSignal: 0 },
+      summary: {
+        total: 0,
+        highSignal: 0,
+        mediumSignal: 0,
+        lowSignal: 0,
+        verified: 0,
+        partiallyVerified: 0,
+        unverified: 0,
+      },
       limitations: [
         result.reason === "missing_product_query"
           ? "A product description is required for the configured ImportYeti buyer search."
@@ -58,18 +75,57 @@ export async function GET(request: NextRequest) {
     hsCode,
     marketCountryCode: market,
     buyers: analyzedBuyers,
+
     summary: {
       total: analyzedBuyers.length,
-      highSignal: analyzedBuyers.filter((buyer) => buyer.intelligence.signal === "high-signal").length,
-      mediumSignal: analyzedBuyers.filter((buyer) => buyer.intelligence.signal === "medium-signal").length,
-      lowSignal: analyzedBuyers.filter((buyer) => buyer.intelligence.signal === "low-signal").length,
+
+      highSignal: analyzedBuyers.filter(
+        (buyer) => buyer.intelligence.signal === "high-signal"
+      ).length,
+
+      mediumSignal: analyzedBuyers.filter(
+        (buyer) => buyer.intelligence.signal === "medium-signal"
+      ).length,
+
+      lowSignal: analyzedBuyers.filter(
+        (buyer) => buyer.intelligence.signal === "low-signal"
+      ).length,
+
+      verified: analyzedBuyers.filter(
+        (buyer) => buyer.verification.status === "verified"
+      ).length,
+
+      partiallyVerified: analyzedBuyers.filter(
+        (buyer) =>
+          buyer.verification.status === "partially-verified"
+      ).length,
+
+      unverified: analyzedBuyers.filter(
+        (buyer) => buyer.verification.status === "unverified"
+      ).length,
     },
+
     evidence: {
-      strong: analyzedBuyers.filter((buyer) => buyer.evidence.status === "strong").length,
-      moderate: analyzedBuyers.filter((buyer) => buyer.evidence.status === "moderate").length,
-      limited: analyzedBuyers.filter((buyer) => buyer.evidence.status === "limited").length,
-      unavailable: analyzedBuyers.filter((buyer) => buyer.evidence.status === "unavailable").length,
+      strong: analyzedBuyers.filter(
+        (buyer) => buyer.evidence.status === "strong"
+      ).length,
+
+      moderate: analyzedBuyers.filter(
+        (buyer) => buyer.evidence.status === "moderate"
+      ).length,
+
+      limited: analyzedBuyers.filter(
+        (buyer) => buyer.evidence.status === "limited"
+      ).length,
+
+      unavailable: analyzedBuyers.filter(
+        (buyer) => buyer.evidence.status === "unavailable"
+      ).length,
     },
-    limitations: analyzedBuyers.length === 0 ? ["Provider is connected but returned no buyers."] : [],
+
+    limitations:
+      analyzedBuyers.length === 0
+        ? ["Provider is connected but returned no buyers."]
+        : [],
   });
 }
