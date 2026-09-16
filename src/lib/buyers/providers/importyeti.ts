@@ -7,32 +7,39 @@ import type {
 import { normalizeBuyer } from "../normalize";
 
 const BASE_URL =
-  "https://data.importyeti.com/v1.0/powerquery/us-import/companies";
+  "https://data.importyeti.com/v1.0/product";
 
-type ImportYetiCompany = {
-  key?: string;
-  doc_count?: number;
-  total_shipments?: number;
-  name_variations?: string[];
-  company_country_code?: string;
-  company_country?: string;
+type ImportYetiProductCompany = {
   company_link?: string;
-  company_website?: Array<{ key?: string; doc_count?: number }>;
-  company_main_phone_number?: string;
-  company_contact_info?: {
-    emails?: string[];
-    phone_numbers?: string[];
-  };
+  company_name?: string;
+  matching_shipments?: number;
+  specialization?: number;
+  company_total_shipments?: number;
+  company_experience?: number;
+  product_description?: string;
+  company_suppliers?: number;
+  total_suppliers?: number;
+  weight?: number;
+  relevance_score?: number;
 };
 
 type ImportYetiResponse = {
   requestCost?: number;
   creditsRemaining?: number;
   data?: {
-    data?: ImportYetiCompany[];
+    data?: ImportYetiProductCompany[];
     totalCompanies?: number;
   };
 };
+
+function normalizeCompanyId(name: string, index: number): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `importyeti-${slug || "buyer"}-${index}`;
+}
 
 export class ImportYetiBuyerProvider implements BuyerDataProvider {
   name = "importyeti";
@@ -70,14 +77,15 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
 
     const limit = Math.min(Math.max(input.limit ?? 10, 1), 50);
 
+    const encodedProduct = encodeURIComponent(productDescription);
+
     const params = new URLSearchParams({
       page_size: String(limit),
-      product_description: productDescription,
     });
 
     try {
       const response = await fetch(
-        `${BASE_URL}?${params.toString()}`,
+        `${BASE_URL}/${encodedProduct}/companies?${params.toString()}`,
         {
           headers: {
             IYApiKey: apiKey,
@@ -102,39 +110,62 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
 
       const buyers: BuyerRecord[] = rows
         .map((row, index) => {
-          const companyName = row.key?.trim();
+          const companyName = row.company_name?.trim();
 
           if (!companyName) {
             return null;
           }
 
-          const matchedShipments =
-            typeof row.doc_count === "number"
-              ? row.doc_count
+          const matchingShipments =
+            typeof row.matching_shipments === "number"
+              ? row.matching_shipments
               : 0;
 
           const totalShipments =
-            typeof row.total_shipments === "number"
-              ? row.total_shipments
+            typeof row.company_total_shipments === "number"
+              ? row.company_total_shipments
               : null;
+
+          const relevance =
+            typeof row.relevance_score === "number"
+              ? row.relevance_score
+              : null;
+
+          const specialization =
+            typeof row.specialization === "number"
+              ? row.specialization
+              : null;
+
+          const strongEvidence =
+            matchingShipments >= 10 ||
+            (relevance !== null && relevance >= 70) ||
+            (specialization !== null && specialization >= 70);
+
+          const moderateEvidence =
+            matchingShipments >= 3 ||
+            (relevance !== null && relevance >= 40) ||
+            (specialization !== null && specialization >= 40);
 
           return normalizeBuyer(
             {
-              id: `importyeti-${companyName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${index}`,
+              id: normalizeCompanyId(companyName, index),
               companyName,
               countryCode: 840,
-              country: row.company_country ?? "United States",
+              country: "United States",
               shipmentCount:
-                totalShipments ?? matchedShipments,
+                matchingShipments > 0
+                  ? matchingShipments
+                  : totalShipments,
               lastShipmentDate: null,
-              productMatch: productDescription,
+              productMatch:
+                row.product_description?.trim() ||
+                productDescription,
               source: "importyeti",
-              evidenceStatus:
-                matchedShipments >= 10
-                  ? "strong"
-                  : matchedShipments >= 3
-                    ? "moderate"
-                    : "limited",
+              evidenceStatus: strongEvidence
+                ? "strong"
+                : moderateEvidence
+                  ? "moderate"
+                  : "limited",
             },
             this.name
           );
