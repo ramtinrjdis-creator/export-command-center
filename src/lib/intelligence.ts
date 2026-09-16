@@ -1,13 +1,36 @@
-export type EvidenceStatus = "strong" | "moderate" | "limited" | "unavailable";
-export type EvidenceItem = { key: string; label: string; value: string; status: EvidenceStatus; source: string; note?: string; };
+export type EvidenceStatus =
+  | "strong"
+  | "moderate"
+  | "limited"
+  | "unavailable";
+
+export type DecisionSignal =
+  | "promising"
+  | "watch"
+  | "insufficient-evidence";
+
+export type EvidenceItem = {
+  key: string;
+  label: string;
+  value: string;
+  status: EvidenceStatus;
+  source: string;
+  note?: string;
+};
+
 export type MarketIntelligenceInput = {
   importValue: number;
   previousImportValue: number | null;
   growthRate: number | null;
+  demandScore: number;
   isReported: boolean;
   isEstimated: boolean;
   originExportValue: number | null;
-  originExportStatus: "recorded" | "no_record" | "unavailable" | null;
+  originExportStatus:
+    | "recorded"
+    | "no_record"
+    | "unavailable"
+    | null;
   originShare: number | null;
 };
 
@@ -15,6 +38,9 @@ export type MarketIntelligence = {
   evidenceScore: number;
   evidenceLabel: "High" | "Medium" | "Low";
   evidenceStatus: EvidenceStatus;
+  decisionSignal: DecisionSignal;
+  decisionLabel: string;
+  nextAction: string;
   evidence: EvidenceItem[];
   limitations: string[];
 };
@@ -36,6 +62,63 @@ function getEvidenceStatus(evidenceScore: number): EvidenceStatus {
   if (evidenceScore >= 50) return "moderate";
   if (evidenceScore > 0) return "limited";
   return "unavailable";
+}
+
+function getDecisionSignal(
+  demandScore: number,
+  growthRate: number | null,
+  evidenceScore: number
+): DecisionSignal {
+  if (
+    evidenceScore < 50 ||
+    demandScore < 10 ||
+    (growthRate !== null && growthRate < -10)
+  ) {
+    return "insufficient-evidence";
+  }
+
+  if (
+    demandScore >= 50 &&
+    (growthRate === null || growthRate >= 5) &&
+    evidenceScore >= 60
+  ) {
+    return "promising";
+  }
+
+  return "watch";
+}
+
+function getDecisionLabel(signal: DecisionSignal): string {
+  if (signal === "promising") return "Promising market signal";
+  if (signal === "watch") return "Worth monitoring";
+  return "Insufficient evidence";
+}
+
+function getNextAction(
+  signal: DecisionSignal,
+  originExportStatus:
+    | "recorded"
+    | "no_record"
+    | "unavailable"
+    | null
+): string {
+  if (signal === "insufficient-evidence") {
+    return "Collect stronger market evidence before prioritizing outreach.";
+  }
+
+  if (originExportStatus === "unavailable") {
+    return "Verify buyer access and origin-specific trade evidence.";
+  }
+
+  if (originExportStatus === "no_record") {
+    return "Verify whether the missing origin record reflects coverage or a real gap.";
+  }
+
+  if (signal === "promising") {
+    return "Validate buyers and market access before outreach.";
+  }
+
+  return "Monitor demand and validate buyers before prioritizing outreach.";
 }
 
 export function buildMarketIntelligence(
@@ -134,10 +217,22 @@ export function buildMarketIntelligence(
 
   evidenceScore = clamp(Math.round(evidenceScore));
 
+  const decisionSignal = getDecisionSignal(
+    input.demandScore,
+    input.growthRate,
+    evidenceScore
+  );
+
   return {
     evidenceScore,
     evidenceLabel: getEvidenceLabel(evidenceScore),
     evidenceStatus: getEvidenceStatus(evidenceScore),
+    decisionSignal,
+    decisionLabel: getDecisionLabel(decisionSignal),
+    nextAction: getNextAction(
+      decisionSignal,
+      input.originExportStatus
+    ),
     evidence,
     limitations,
   };

@@ -326,14 +326,16 @@ export async function GET(request: Request) {
           ? "Quantity/weight estimated"
           : "Reported quantity/weight";
 
+      const demandScore =
+        maxImport > 0
+          ? Math.round(
+              (market.importValue / maxImport) * 100
+            )
+          : 0;
+
       return {
         ...market,
-        demandScore:
-          maxImport > 0
-            ? Math.round(
-                (market.importValue / maxImport) * 100
-              )
-            : 0,
+        demandScore,
         growthSignal:
           growthSignal === null
             ? null
@@ -343,6 +345,7 @@ export async function GET(request: Request) {
           importValue: market.importValue,
           previousImportValue: market.previousImportValue,
           growthRate: market.growthRate,
+          demandScore: maxImport > 0 ? Math.round((market.importValue / maxImport) * 100) : 0,
           isReported: market.isReported,
           isEstimated: market.isEstimated,
           originExportValue: market.originExportValue,
