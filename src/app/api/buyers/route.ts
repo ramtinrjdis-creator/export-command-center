@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const market = Number(searchParams.get("market"));
   const limit = Number(searchParams.get("limit") ?? "20");
 
-  if (!/^\\d{2,6}$/.test(hsCode)) {
+  if (!/^[0-9]{2,6}$/.test(hsCode)) {
     return NextResponse.json({ error: "hsCode must be 2-6 digits." }, { status: 400 });
   }
 
