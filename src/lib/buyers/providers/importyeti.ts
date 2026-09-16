@@ -152,10 +152,8 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
               companyName,
               countryCode: 840,
               country: "United States",
-              shipmentCount:
-                matchingShipments > 0
-                  ? matchingShipments
-                  : totalShipments,
+              shipmentCount: totalShipments,
+              matchingShipments,
               lastShipmentDate: null,
               productMatch:
                 row.product_description?.trim() ||
