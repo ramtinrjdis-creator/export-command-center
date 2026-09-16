@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBuyerProvider } from "@/lib/buyers";
 import { analyzeBuyer } from "@/lib/buyers/intelligence";
+import { evaluateBuyerEvidence } from "@/lib/buyers/evidence";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest) {
   const analyzedBuyers = result.buyers.map((buyer) => ({
     ...buyer,
     intelligence: analyzeBuyer(buyer),
+    evidence: evaluateBuyerEvidence(buyer),
   }));
 
   return NextResponse.json({
@@ -51,6 +53,12 @@ export async function GET(request: NextRequest) {
       highSignal: analyzedBuyers.filter((buyer) => buyer.intelligence.signal === "high-signal").length,
       mediumSignal: analyzedBuyers.filter((buyer) => buyer.intelligence.signal === "medium-signal").length,
       lowSignal: analyzedBuyers.filter((buyer) => buyer.intelligence.signal === "low-signal").length,
+    },
+    evidence: {
+      strong: analyzedBuyers.filter((buyer) => buyer.evidence.status === "strong").length,
+      moderate: analyzedBuyers.filter((buyer) => buyer.evidence.status === "moderate").length,
+      limited: analyzedBuyers.filter((buyer) => buyer.evidence.status === "limited").length,
+      unavailable: analyzedBuyers.filter((buyer) => buyer.evidence.status === "unavailable").length,
     },
     limitations: analyzedBuyers.length === 0 ? ["Provider is connected but returned no buyers."] : [],
   });
