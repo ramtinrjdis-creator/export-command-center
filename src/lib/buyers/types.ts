@@ -11,8 +11,12 @@ export type BuyerRecord = {
   countryCode: number;
   country: string | null;
   shipmentCount: number | null;
+  matchingShipments: number | null;
   lastShipmentDate: string | null;
   productMatch: string | null;
+  relevanceScore: number | null;
+  specialization: number | null;
+  supplierCount: number | null;
   source: string;
   evidenceStatus: "strong" | "moderate" | "limited";
 };

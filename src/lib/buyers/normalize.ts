@@ -6,8 +6,12 @@ export type BuyerProviderPayload = {
   countryCode?: number | null;
   country?: string | null;
   shipmentCount?: number | null;
+  matchingShipments?: number | null;
   lastShipmentDate?: string | null;
   productMatch?: string | null;
+  relevanceScore?: number | null;
+  specialization?: number | null;
+  supplierCount?: number | null;
   source?: string | null;
   evidenceStatus?: "strong" | "moderate" | "limited" | null;
 };
@@ -28,10 +32,26 @@ export function normalizeBuyer(
       typeof payload.shipmentCount === "number"
         ? Math.max(0, Math.round(payload.shipmentCount))
         : null,
+    matchingShipments:
+      typeof payload.matchingShipments === "number"
+        ? Math.max(0, Math.round(payload.matchingShipments))
+        : null,
     lastShipmentDate:
       payload.lastShipmentDate?.trim() || null,
     productMatch:
       payload.productMatch?.trim() || null,
+    relevanceScore:
+      typeof payload.relevanceScore === "number"
+        ? payload.relevanceScore
+        : null,
+    specialization:
+      typeof payload.specialization === "number"
+        ? payload.specialization
+        : null,
+    supplierCount:
+      typeof payload.supplierCount === "number"
+        ? Math.max(0, Math.round(payload.supplierCount))
+        : null,
     source: payload.source?.trim() || provider,
     evidenceStatus:
       payload.evidenceStatus ?? "limited",
