@@ -22,6 +22,7 @@ type Market = {
     evidenceLabel: "High" | "Medium" | "Low";
     evidenceStatus: "strong" | "moderate" | "limited" | "unavailable";
     decisionSignal: "promising" | "watch" | "insufficient-evidence";
+    marketPriority: "priority" | "monitor" | "research";
     decisionLabel: string;
     nextAction: string;
     evidence: {
@@ -74,6 +75,12 @@ export default function Home() {
   const [year, setYear] = useState("2024");
 
   const [loading, setLoading] = useState(false);
+
+  const priorityRank = {
+    priority: 0,
+    monitor: 1,
+    research: 2,
+  } as const;
   const [searched, setSearched] = useState(false);
   const [markets, setMarkets] = useState<Market[]>([]);
   const [error, setError] = useState("");
