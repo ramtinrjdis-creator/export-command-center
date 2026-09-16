@@ -92,7 +92,7 @@ async function fetchYear(
       countryCode: Number(item.reporterCode),
       country:
         COUNTRY_NAMES[Number(item.reporterCode)] ||
-        `Country ${item.reporterCode}`,
+        "Unknown market",
       importValue: Number(item.primaryValue || 0),
       quantity: Number(item.netWgt || item.qty || 0),
       unit: item.qtyUnitAbbr || item.netWgtUnitAbbr || null,
@@ -315,18 +315,11 @@ export async function GET(request: Request) {
     );
 
     const markets = sortedMarkets.map((market) => {
-      const marketShare =
-        totalReturnedImportValue > 0
-          ? (market.importValue / totalReturnedImportValue) * 100
-          : 0;
 
       const growthSignal =
         market.growthRate === null
           ? null
-          : Math.max(
-              0,
-              Math.min(100, 50 + market.growthRate * 2)
-            );
+          : Math.max(0, Math.min(100, 50 + market.growthRate));
 
       const dataQuality =
         market.isEstimated
@@ -341,7 +334,6 @@ export async function GET(request: Request) {
                 (market.importValue / maxImport) * 100
               )
             : 0,
-        marketShare: Number(marketShare.toFixed(2)),
         growthSignal:
           growthSignal === null
             ? null
