@@ -3,59 +3,104 @@
 import { FormEvent, useState } from "react";
 
 type Market = {
+  countryCode: number;
   country: string;
-  demand: string;
-  competition: string;
-  opportunity: number;
-  reason: string;
+  importValue: number;
+  quantity: number;
+  unit: string | null;
+  demandScore: number;
+  isReported: boolean;
+  isEstimated: boolean;
+  previousImportValue: number | null;
+  growthRate: number | null;
+  trend: string;
+  originExportValue: number | null;
+  originExportStatus: "recorded" | "no_record" | "unavailable" | null;
+  originShare: number | null;
 };
 
-const demoMarkets: Market[] = [
-  {
-    country: "United Arab Emirates",
-    demand: "High",
-    competition: "Medium",
-    opportunity: 91,
-    reason: "Strong import activity, regional distribution potential, and relatively accessible B2B market.",
-  },
-  {
-    country: "Saudi Arabia",
-    demand: "High",
-    competition: "Medium",
-    opportunity: 87,
-    reason: "Large industrial demand with established import channels and expanding infrastructure.",
-  },
-  {
-    country: "Turkey",
-    demand: "High",
-    competition: "High",
-    opportunity: 78,
-    reason: "Large industrial market, but stronger local and regional competition requires sharper positioning.",
-  },
-];
+type AnalysisResponse = {
+  ok: boolean;
+  source?: string;
+  year?: string;
+  hsCode?: string;
+  markets?: Market[];
+  count?: number;
+  evidence?: {
+    source: string;
+    methodology: string;
+    preview: boolean;
+  };
+  error?: string;
+};
+
+function formatImportValue(value: number) {
+  if (value >= 1_000_000_000) {
+    return `$${(value / 1_000_000_000).toFixed(2)}B`;
+  }
+
+  if (value >= 1_000_000) {
+    return `$${(value / 1_000_000).toFixed(1)}M`;
+  }
+
+  if (value >= 1_000) {
+    return `$${(value / 1_000).toFixed(0)}K`;
+  }
+
+  return `$${Math.round(value).toLocaleString()}`;
+}
 
 export default function Home() {
   const [product, setProduct] = useState("");
   const [origin, setOrigin] = useState("");
+  const [hsCode, setHsCode] = useState("");
+  const [year, setYear] = useState("2024");
+
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [markets, setMarkets] = useState<Market[]>([]);
+  const [error, setError] = useState("");
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!product.trim() || !origin.trim()) return;
+    if (!product.trim() || !origin.trim() || !hsCode.trim()) return;
 
     setLoading(true);
+    setSearched(false);
+    setError("");
+    setMarkets([]);
 
-    window.setTimeout(() => {
-      setLoading(false);
+    try {
+      const response = await fetch(
+        `/api/analyze?hsCode=${encodeURIComponent(
+          hsCode.trim()
+        )}&year=${encodeURIComponent(
+          year
+        )}&origin=${encodeURIComponent(origin.trim())}`
+      );
+
+      const data: AnalysisResponse = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Analysis failed.");
+      }
+
+      setMarkets(data.markets || []);
       setSearched(true);
-    }, 900);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to retrieve trade data."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
-      {/* Navigation */}
       <nav className="border-b border-slate-800/80 bg-slate-950/90">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
           <div>
@@ -78,7 +123,6 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.16),transparent_42%)]" />
 
@@ -90,22 +134,22 @@ export default function Home() {
 
             <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
               Find where your product
-              <span className="block text-blue-400">can actually win.</span>
+              <span className="block text-blue-400">
+                can actually win.
+              </span>
             </h1>
 
             <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-slate-400 sm:text-lg">
-              Discover promising export markets, identify potential buyers,
-              evaluate competition, and prioritize your next sales action
-              using evidence instead of guesswork.
+              Discover promising export markets using real international
+              trade data, then turn evidence into your next sales action.
             </p>
           </div>
 
-          {/* Search Card */}
           <form
             onSubmit={handleSubmit}
-            className="mx-auto mt-12 max-w-4xl rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-2xl shadow-black/30 backdrop-blur sm:p-7"
+            className="mx-auto mt-12 max-w-5xl rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-2xl shadow-black/30 backdrop-blur sm:p-7"
           >
-            <div className="grid gap-5 md:grid-cols-[1fr_1fr_auto] md:items-end">
+            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
               <div>
                 <label
                   htmlFor="product"
@@ -118,7 +162,28 @@ export default function Home() {
                   id="product"
                   value={product}
                   onChange={(event) => setProduct(event.target.value)}
-                  placeholder="e.g. Butterfly Valve"
+                  placeholder="e.g. Coffee"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3.5 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="hsCode"
+                  className="mb-2 block text-sm font-medium text-slate-300"
+                >
+                  HS Code
+                </label>
+
+                <input
+                  id="hsCode"
+                  value={hsCode}
+                  onChange={(event) =>
+                    setHsCode(event.target.value.replace(/\D/g, ""))
+                  }
+                  placeholder="e.g. 090111"
+                  inputMode="numeric"
+                  maxLength={6}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3.5 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
@@ -142,119 +207,192 @@ export default function Home() {
 
               <button
                 type="submit"
-                disabled={loading || !product.trim() || !origin.trim()}
+                disabled={
+                  loading ||
+                  !product.trim() ||
+                  !origin.trim() ||
+                  !hsCode.trim()
+                }
                 className="rounded-xl bg-blue-600 px-6 py-3.5 font-semibold transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {loading ? "Analyzing..." : "Find Opportunities"}
+                {loading ? "Analyzing..." : "Find Markets"}
               </button>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+              <span>✓ Real trade data</span>
               <span>✓ Market demand</span>
-              <span>✓ Competition signals</span>
-              <span>✓ Buyer potential</span>
-              <span>✓ Evidence-based scoring</span>
+              <span>✓ Evidence</span>
+              <span>✓ Transparent signals</span>
             </div>
           </form>
         </div>
       </section>
 
-      {/* Results */}
+      {error && (
+        <section className="border-y border-red-900/40 bg-red-950/20">
+          <div className="mx-auto max-w-7xl px-5 py-6 sm:px-8">
+            <div className="rounded-2xl border border-red-900/50 bg-red-950/30 p-5">
+              <p className="font-semibold text-red-300">
+                Analysis failed
+              </p>
+              <p className="mt-2 text-sm text-red-400">{error}</p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {searched && (
         <section className="border-y border-slate-800 bg-slate-900/40">
           <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8">
             <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
-                  Analysis Preview
+                  Live Trade Analysis
                 </p>
 
                 <h2 className="mt-2 text-2xl font-bold">
-                  Opportunities for {product}
+                  Import markets for {product}
                 </h2>
 
                 <p className="mt-2 text-sm text-slate-500">
-                  Origin: {origin} · Demo intelligence layer
+                  Origin: {origin} · HS {hsCode} · {year}
                 </p>
               </div>
 
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-400">
-                Analysis complete
+                {markets.length} markets found
               </div>
             </div>
 
-            <div className="grid gap-5 lg:grid-cols-3">
-              {demoMarkets.map((market) => (
-                <article
-                  key={market.country}
-                  className="rounded-2xl border border-slate-800 bg-slate-950 p-6"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-lg font-semibold">{market.country}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Market opportunity
-                      </p>
-                    </div>
-
-                    <div className="text-right">
-                      <div className="text-3xl font-bold text-blue-400">
-                        {market.opportunity}
-                      </div>
-                      <div className="text-[10px] uppercase tracking-wider text-slate-600">
-                        Score
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-800">
-                    <div
-                      className="h-full rounded-full bg-blue-500"
-                      style={{ width: `${market.opportunity}%` }}
-                    />
-                  </div>
-
-                  <div className="mt-6 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-slate-900 p-3">
-                      <div className="text-xs text-slate-500">Demand</div>
-                      <div className="mt-1 text-sm font-semibold">
-                        {market.demand}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl bg-slate-900 p-3">
-                      <div className="text-xs text-slate-500">Competition</div>
-                      <div className="mt-1 text-sm font-semibold">
-                        {market.competition}
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="mt-5 text-sm leading-6 text-slate-400">
-                    {market.reason}
-                  </p>
-
-                  <button
-                    type="button"
-                    className="mt-6 w-full rounded-xl border border-slate-700 px-4 py-3 text-sm font-medium transition hover:border-blue-500 hover:bg-blue-500/5"
+            {markets.length === 0 ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-8 text-center">
+                <p className="font-semibold">No trade records found.</p>
+                <p className="mt-2 text-sm text-slate-500">
+                  Try another HS code or year.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                {markets.slice(0, 12).map((market) => (
+                  <article
+                    key={market.countryCode}
+                    className="rounded-2xl border border-slate-800 bg-slate-950 p-6"
                   >
-                    View Evidence
-                  </button>
-                </article>
-              ))}
-            </div>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-lg font-semibold">
+                          {market.country}
+                        </p>
+
+                        <p className="mt-1 text-xs text-slate-500">
+                          Import demand signal
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-3xl font-bold text-blue-400">
+                          {market.demandScore}
+                        </div>
+
+                        <div className="text-[10px] uppercase tracking-wider text-slate-600">
+                          Index
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className="h-full rounded-full bg-blue-500"
+                        style={{
+                          width: `${market.demandScore}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="mt-6 rounded-xl bg-slate-900 p-4">
+                      <div className="text-xs text-slate-500">
+                        Import value
+                      </div>
+
+                      <div className="mt-1 text-xl font-semibold">
+                        {formatImportValue(market.importValue)}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl bg-slate-900 p-3">
+                        <div className="text-xs text-slate-500">
+                          YoY growth
+                        </div>
+
+                        <div className="mt-1 text-sm font-semibold">
+                          {market.growthRate === null
+                            ? "—"
+                            : `${market.growthRate > 0 ? "+" : ""}${market.growthRate}%`}
+                        </div>
+
+                        <div className="mt-1 text-xs text-slate-500">
+                          {market.trend}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-900 p-3">
+                        <div className="text-xs text-slate-500">
+                          Data status
+                        </div>
+
+                        <div className="mt-1 text-sm font-semibold">
+                          {market.isEstimated
+                            ? "Estimated"
+                            : "Reported"}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-900 p-3">
+                        <div className="text-xs text-slate-500">
+                          Quantity
+                        </div>
+
+                        <div className="mt-1 text-sm font-semibold">
+                          {market.quantity > 0
+                            ? Math.round(
+                                market.quantity
+                              ).toLocaleString()
+                            : "—"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex items-center justify-between border-t border-slate-800 pt-4">
+                      <span className="text-xs text-slate-500">
+                        UN Comtrade
+                      </span>
+
+                      <span className="text-xs text-blue-400">
+                        Evidence available
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
 
             <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
               <div className="flex gap-3">
                 <span className="mt-0.5 text-amber-400">!</span>
+
                 <div>
                   <p className="font-semibold text-amber-300">
-                    Demo intelligence
+                    Current MVP scope
                   </p>
+
                   <p className="mt-1 text-sm leading-6 text-slate-400">
-                    These results are currently simulated UI data. The next
-                    product layer will replace them with real market,
-                    trade, company, and buyer evidence.
+                    This version uses real UN Comtrade import data to
+                    rank markets by import value. Competition,
+                    buyer discovery, market access, and origin-specific
+                    opportunity scoring will be added as separate
+                    evidence layers.
                   </p>
                 </div>
               </div>
@@ -263,7 +401,6 @@ export default function Home() {
         </section>
       )}
 
-      {/* Product Architecture */}
       <section className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
@@ -284,7 +421,7 @@ export default function Home() {
           <Feature
             number="01"
             title="Market Intelligence"
-            text="Measure demand, import activity, market conditions, competition, and recent signals."
+            text="Measure real import activity and identify markets with strong demand signals."
           />
 
           <Feature
@@ -296,12 +433,11 @@ export default function Home() {
           <Feature
             number="03"
             title="Opportunity Engine"
-            text="Convert multiple signals into a transparent priority score and recommended next action."
+            text="Combine multiple verified signals into a transparent priority score and next sales action."
           />
         </div>
       </section>
 
-      {/* Evidence Principle */}
       <section className="mx-auto max-w-7xl px-5 pb-20 sm:px-8">
         <div className="rounded-3xl border border-blue-900/50 bg-blue-950/20 p-7 sm:p-10">
           <div className="max-w-3xl">
@@ -314,9 +450,9 @@ export default function Home() {
             </h2>
 
             <p className="mt-4 leading-7 text-slate-400">
-              A market score is only useful when the user can understand why
-              the opportunity exists, what evidence supports it, and what
-              action should happen next.
+              A market score is only useful when the user can understand
+              why the opportunity exists, what evidence supports it,
+              and what action should happen next.
             </p>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
@@ -328,7 +464,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="border-t border-slate-800">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-8">
           <span>Export Command Center</span>
@@ -357,7 +492,13 @@ function Feature({
   );
 }
 
-function Signal({ title, value }: { title: string; value: string }) {
+function Signal({
+  title,
+  value,
+}: {
+  title: string;
+  value: string;
+}) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
       <div className="text-sm font-semibold">{title}</div>
