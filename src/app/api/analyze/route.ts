@@ -333,15 +333,6 @@ export async function GET(request: Request) {
           ? "Quantity/weight estimated"
           : "Reported quantity/weight";
 
-      const marketQuality =
-        growthSignal === null
-          ? Math.round(marketShare * 2)
-          : Math.round(
-              marketShare * 0.5 +
-              growthSignal * 0.3 +
-              (market.isEstimated ? 15 : 20)
-            );
-
       return {
         ...market,
         demandScore:
@@ -356,7 +347,6 @@ export async function GET(request: Request) {
             ? null
             : Math.round(growthSignal),
         dataQuality,
-        marketQuality: Math.min(100, marketQuality),
         intelligence: buildMarketIntelligence({
           importValue: market.importValue,
           previousImportValue: market.previousImportValue,
