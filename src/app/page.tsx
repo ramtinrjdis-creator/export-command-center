@@ -18,8 +18,8 @@ type Market = {
   originExportStatus: "recorded" | "no_record" | "unavailable" | null;
   originShare: number | null;
   intelligence: {
-    confidence: number;
-    confidenceLabel: "High" | "Medium" | "Low";
+    evidenceScore: number;
+    evidenceLabel: "High" | "Medium" | "Low";
     evidenceStatus: "strong" | "moderate" | "limited" | "unavailable";
     evidence: {
       key: string;
@@ -365,16 +365,16 @@ export default function Home() {
 
                       <div className="rounded-xl bg-slate-900 p-3">
                         <div className="text-xs text-slate-500">
-                          Confidence
+                          Evidence Strength
                         </div>
 
                         <div className="mt-1 flex items-center justify-between gap-2">
                           <span className="text-sm font-semibold">
-                            {market.intelligence.confidence}/100
+                            {market.intelligence.evidenceScore}/100
                           </span>
 
                           <span className="text-[10px] uppercase tracking-wider text-slate-500">
-                            {market.intelligence.confidenceLabel}
+                            {market.intelligence.evidenceLabel}
                           </span>
                         </div>
 
@@ -501,7 +501,7 @@ export default function Home() {
             </p>
 
             <h2 className="mt-3 text-3xl font-bold">
-              No Evidence → No Confidence.
+              No Evidence → No Evidence Strength.
             </h2>
 
             <p className="mt-4 leading-7 text-slate-400">
@@ -512,7 +512,7 @@ export default function Home() {
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               <Signal title="Evidence" value="What happened?" />
-              <Signal title="Confidence" value="How strong is it?" />
+              <Signal title="Evidence Strength" value="How strong is it?" />
               <Signal title="Action" value="What should I do?" />
             </div>
           </div>
