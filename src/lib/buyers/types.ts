@@ -24,7 +24,7 @@ export type BuyerProviderResult =
   | {
       status: "unavailable";
       buyers: [];
-      reason: "missing_credentials" | "provider_error";
+      reason: "missing_credentials" | "provider_error" | "unsupported_market";
     };
 
 export interface BuyerDataProvider {
