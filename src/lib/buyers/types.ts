@@ -1,6 +1,7 @@
 export type BuyerSearchInput = {
   hsCode: string;
   marketCountryCode: number;
+  productDescription?: string;
   limit?: number;
 };
 
@@ -24,7 +25,11 @@ export type BuyerProviderResult =
   | {
       status: "unavailable";
       buyers: [];
-      reason: "missing_credentials" | "provider_error" | "unsupported_market";
+      reason:
+        | "missing_credentials"
+        | "provider_error"
+        | "unsupported_market"
+        | "missing_product_query";
     };
 
 export interface BuyerDataProvider {

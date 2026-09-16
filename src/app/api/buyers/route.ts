@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const hsCode = searchParams.get("hsCode")?.trim() ?? "";
   const market = Number(searchParams.get("market"));
+  const productDescription =
+    searchParams.get("productDescription")?.trim() ?? "";
   const limit = Number(searchParams.get("limit") ?? "20");
 
   if (!/^[0-9]{2,6}$/.test(hsCode)) {
@@ -20,7 +22,12 @@ export async function GET(request: NextRequest) {
 
   const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 20;
   const provider = getBuyerProvider();
-  const result = await provider.searchBuyers({ hsCode, marketCountryCode: market, limit: safeLimit });
+  const result = await provider.searchBuyers({
+    hsCode,
+    marketCountryCode: market,
+    productDescription: productDescription || undefined,
+    limit: safeLimit,
+  });
 
   if (result.status === "unavailable") {
     return NextResponse.json({
@@ -32,7 +39,11 @@ export async function GET(request: NextRequest) {
       marketCountryCode: market,
       buyers: [],
       summary: { total: 0, highSignal: 0, mediumSignal: 0, lowSignal: 0 },
-      limitations: ["No live buyer data is currently available."],
+      limitations: [
+        result.reason === "missing_product_query"
+          ? "A product description is required for the configured ImportYeti buyer search."
+          : "No live buyer data is currently available.",
+      ],
     });
   }
 

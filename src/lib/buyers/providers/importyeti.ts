@@ -7,26 +7,31 @@ import type {
 import { normalizeBuyer } from "../normalize";
 
 const BASE_URL =
-  "https://data.importyeti.com/v1.0/powerquery/us-import/bols";
+  "https://data.importyeti.com/v1.0/powerquery/us-import/companies";
 
-type ImportYetiBol = {
-  bol_number?: string;
-  arrival_date?: string;
-  company_name?: string;
-  company_total_shipments?: number;
-  company_country?: string;
+type ImportYetiCompany = {
+  key?: string;
+  doc_count?: number;
+  total_shipments?: number;
+  name_variations?: string[];
   company_country_code?: string;
-  product_description?: string;
-  hs_code?: string | null;
+  company_country?: string;
+  company_link?: string;
+  company_website?: Array<{ key?: string; doc_count?: number }>;
+  company_main_phone_number?: string;
+  company_contact_info?: {
+    emails?: string[];
+    phone_numbers?: string[];
+  };
 };
 
 type ImportYetiResponse = {
-  data?: {
-    data?: ImportYetiBol[];
-    totalCount?: number;
-  };
   requestCost?: number;
   creditsRemaining?: number;
+  data?: {
+    data?: ImportYetiCompany[];
+    totalCompanies?: number;
+  };
 };
 
 export class ImportYetiBuyerProvider implements BuyerDataProvider {
@@ -45,8 +50,6 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
       };
     }
 
-    // ImportYeti's US-import dataset is appropriate only
-    // when the selected market is the United States.
     if (input.marketCountryCode !== 840) {
       return {
         status: "unavailable",
@@ -55,11 +58,21 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
       };
     }
 
+    const productDescription = input.productDescription?.trim();
+
+    if (!productDescription) {
+      return {
+        status: "unavailable",
+        buyers: [],
+        reason: "missing_product_query",
+      };
+    }
+
     const limit = Math.min(Math.max(input.limit ?? 10, 1), 50);
 
     const params = new URLSearchParams({
       page_size: String(limit),
-      hs_code: input.hsCode,
+      product_description: productDescription,
     });
 
     try {
@@ -87,99 +100,46 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
 
       const rows = payload.data?.data ?? [];
 
-      const grouped = new Map<
-        string,
-        {
-          companyName: string;
-          shipmentCount: number;
-          lastShipmentDate: string | null;
-          country: string | null;
-          productDescriptions: Set<string>;
-          totalShipments: number | null;
-        }
-      >();
+      const buyers: BuyerRecord[] = rows
+        .map((row, index) => {
+          const companyName = row.key?.trim();
 
-      for (const row of rows) {
-        const companyName = row.company_name?.trim();
+          if (!companyName) {
+            return null;
+          }
 
-        if (!companyName) continue;
+          const matchedShipments =
+            typeof row.doc_count === "number"
+              ? row.doc_count
+              : 0;
 
-        const key = companyName.toLowerCase();
-        const existing = grouped.get(key);
+          const totalShipments =
+            typeof row.total_shipments === "number"
+              ? row.total_shipments
+              : null;
 
-        if (!existing) {
-          grouped.set(key, {
-            companyName,
-            shipmentCount: 1,
-            lastShipmentDate: row.arrival_date ?? null,
-            country: row.company_country ?? "United States",
-            productDescriptions: new Set(
-              row.product_description
-                ? [row.product_description]
-                : []
-            ),
-            totalShipments:
-              typeof row.company_total_shipments === "number"
-                ? row.company_total_shipments
-                : null,
-          });
-
-          continue;
-        }
-
-        existing.shipmentCount += 1;
-
-        if (
-          row.arrival_date &&
-          (!existing.lastShipmentDate ||
-            row.arrival_date > existing.lastShipmentDate)
-        ) {
-          existing.lastShipmentDate = row.arrival_date;
-        }
-
-        if (row.product_description) {
-          existing.productDescriptions.add(
-            row.product_description
+          return normalizeBuyer(
+            {
+              id: `importyeti-${companyName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${index}`,
+              companyName,
+              countryCode: 840,
+              country: row.company_country ?? "United States",
+              shipmentCount:
+                totalShipments ?? matchedShipments,
+              lastShipmentDate: null,
+              productMatch: productDescription,
+              source: "importyeti",
+              evidenceStatus:
+                matchedShipments >= 10
+                  ? "strong"
+                  : matchedShipments >= 3
+                    ? "moderate"
+                    : "limited",
+            },
+            this.name
           );
-        }
-
-        if (
-          typeof row.company_total_shipments === "number"
-        ) {
-          existing.totalShipments =
-            row.company_total_shipments;
-        }
-      }
-
-      const buyers: BuyerRecord[] = Array.from(
-        grouped.entries()
-      ).map(([key, value]) =>
-        normalizeBuyer(
-          {
-            id: `importyeti-${key}`,
-            companyName: value.companyName,
-            countryCode: 840,
-            country: value.country,
-            shipmentCount:
-              value.totalShipments ?? value.shipmentCount,
-            lastShipmentDate: value.lastShipmentDate,
-            productMatch:
-              value.productDescriptions.size > 0
-                ? Array.from(
-                    value.productDescriptions
-                  ).join(", ")
-                : `HS ${input.hsCode}`,
-            source: "importyeti",
-            evidenceStatus:
-              value.shipmentCount >= 3
-                ? "strong"
-                : value.shipmentCount >= 2
-                  ? "moderate"
-                  : "limited",
-          },
-          this.name
-        )
-      );
+        })
+        .filter((buyer): buyer is BuyerRecord => buyer !== null);
 
       return {
         status: "available",
