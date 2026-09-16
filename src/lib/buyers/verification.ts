@@ -12,6 +12,19 @@ export type BuyerVerification = {
   missingSignals: string[];
 };
 
+function isRecentShipment(dateValue: string | null): boolean {
+  if (!dateValue) return false;
+
+  const timestamp = Date.parse(dateValue);
+
+  if (Number.isNaN(timestamp)) return false;
+
+  const ageDays =
+    (Date.now() - timestamp) / (1000 * 60 * 60 * 24);
+
+  return ageDays >= 0 && ageDays <= 365;
+}
+
 export function verifyBuyer(
   buyer: BuyerRecord
 ): BuyerVerification {
@@ -19,7 +32,7 @@ export function verifyBuyer(
   const verifiedSignals: string[] = [];
   const missingSignals: string[] = [];
 
-  // Company identity: a name is necessary context, but not independent verification.
+  // Company identity
   if (buyer.companyName.trim()) {
     score += 10;
     verifiedSignals.push("Company name is available.");
@@ -27,7 +40,7 @@ export function verifyBuyer(
     missingSignals.push("Company name is unavailable.");
   }
 
-  // A provider-supplied company link is stronger identity evidence.
+  // Provider-supplied company record
   if (buyer.companyLink) {
     score += 25;
     verifiedSignals.push("A company record link is available.");
@@ -35,7 +48,7 @@ export function verifyBuyer(
     missingSignals.push("Company record link is unavailable.");
   }
 
-  // Product-specific shipment activity is the key behavioral verification signal.
+  // Product-specific shipment activity
   if (buyer.matchingShipments !== null) {
     if (buyer.matchingShipments >= 20) {
       score += 30;
@@ -71,27 +84,36 @@ export function verifyBuyer(
     missingSignals.push("Overall shipment activity is unavailable.");
   }
 
-  // Recent shipment evidence helps establish that the buyer is not only historical.
-  if (buyer.lastShipmentDate) {
+  // Recency must be based on the actual date, not merely its existence.
+  if (isRecentShipment(buyer.lastShipmentDate)) {
     score += 15;
-    verifiedSignals.push("Recent shipment date evidence is available.");
+    verifiedSignals.push(
+      "Shipment activity within the last 12 months is recorded."
+    );
+  } else if (buyer.lastShipmentDate) {
+    missingSignals.push(
+      "Shipment date exists but is older than 12 months."
+    );
   } else {
-    missingSignals.push("Recent shipment date evidence is unavailable.");
+    missingSignals.push(
+      "Recent shipment date evidence is unavailable."
+    );
   }
 
-  // Product-match text alone is not treated as independent verification.
+  // Product-match text alone is not independent verification.
   if (!buyer.productMatch) {
     missingSignals.push("Product match description is unavailable.");
   }
 
   score = Math.min(100, Math.round(score));
 
-  // Verified requires multiple independent evidence layers.
   const hasCompanyLink = Boolean(buyer.companyLink);
   const hasProductActivity =
     buyer.matchingShipments !== null &&
     buyer.matchingShipments > 0;
-  const hasRecentActivity = Boolean(buyer.lastShipmentDate);
+  const hasRecentActivity = isRecentShipment(
+    buyer.lastShipmentDate
+  );
 
   const status: BuyerVerificationStatus =
     hasCompanyLink &&

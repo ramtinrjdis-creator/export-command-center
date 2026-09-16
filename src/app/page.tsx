@@ -37,6 +37,77 @@ type Market = {
   };
 };
 
+type Buyer = {
+  id: string;
+  companyName: string;
+  companyLink: string | null;
+  countryCode: number;
+  country: string | null;
+  shipmentCount: number | null;
+  matchingShipments: number | null;
+  lastShipmentDate: string | null;
+  productMatch: string | null;
+  relevanceScore: number | null;
+  specialization: number | null;
+  supplierCount: number | null;
+  source: string;
+  evidenceStatus: "strong" | "moderate" | "limited";
+};
+
+type BuyerSummary = {
+  total: number;
+  highSignal: number;
+  mediumSignal: number;
+  lowSignal: number;
+  verified: number;
+  partiallyVerified: number;
+  unverified: number;
+};
+
+type BuyerAnalysis = {
+  buyer: Buyer;
+  intelligence: {
+    signal: "high-signal" | "medium-signal" | "low-signal" | "insufficient-evidence";
+    signalScore: number;
+    reasons: string[];
+    nextAction: string;
+  };
+  evidence: {
+    status: "strong" | "moderate" | "limited" | "unavailable";
+    score: number;
+    signals: string[];
+    limitations: string[];
+  };
+  verification: {
+    status: "verified" | "partially-verified" | "unverified";
+    score: number;
+    verifiedSignals: string[];
+    missingSignals: string[];
+  };
+  readiness: "outreach-ready" | "needs-verification" | "research";
+};
+
+type BuyerProviderMeta = {
+  provider: string;
+  requestCost: number | null;
+  creditsRemaining: number | null;
+  requestId: string | null;
+  fetchedAt: string;
+};
+
+type BuyerResponse = {
+  available: boolean;
+  provider?: string;
+  status?: string;
+  reason?: string;
+  hsCode: string;
+  marketCountryCode: number;
+  buyers: BuyerAnalysis[];
+  summary: BuyerSummary;
+  limitations: string[];
+  providerMeta?: BuyerProviderMeta;
+};
+
 type AnalysisResponse = {
   ok: boolean;
   source?: string;
@@ -83,6 +154,13 @@ export default function Home() {
   } as const;
   const [searched, setSearched] = useState(false);
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const [buyers, setBuyers] = useState<BuyerAnalysis[]>([]);
+  const [buyerSummary, setBuyerSummary] = useState<BuyerSummary | null>(null);
+  const [buyerProvider, setBuyerProvider] = useState("");
+  const [buyerLoading, setBuyerLoading] = useState(false);
+  const [buyerError, setBuyerError] = useState("");
+  const [buyerUnavailable, setBuyerUnavailable] = useState(false);
   const [error, setError] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -120,6 +198,55 @@ export default function Home() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadBuyers(market: Market) {
+    setSelectedMarket(market);
+    setBuyers([]);
+    setBuyerSummary(null);
+    setBuyerProvider("");
+    setBuyerError("");
+    setBuyerUnavailable(false);
+    setBuyerLoading(true);
+
+    try {
+      const params = new URLSearchParams({
+        hsCode,
+        market: String(market.countryCode),
+        productDescription: product,
+        limit: "10",
+      });
+
+      const response = await fetch(`/api/buyers?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      const data = (await response.json()) as BuyerResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.reason === "string"
+            ? data.reason
+            : "Buyer search failed."
+        );
+      }
+
+      setBuyerProvider(data.provider ?? "");
+      setBuyers(data.buyers ?? []);
+      setBuyerSummary(data.summary ?? null);
+      setBuyerUnavailable(!data.available);
+
+      if (!data.available && data.limitations?.length) {
+        setBuyerError(data.limitations[0]);
+      }
+    } catch (err) {
+      setBuyerError(
+        err instanceof Error ? err.message : "Buyer search failed."
+      );
+      setBuyerUnavailable(true);
+    } finally {
+      setBuyerLoading(false);
     }
   }
 
@@ -438,10 +565,186 @@ export default function Home() {
                         Evidence available
                       </span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => loadBuyers(market)}
+                      disabled={buyerLoading}
+                      className="mt-5 w-full rounded-xl border border-blue-500/40 bg-blue-500/10 px-4 py-3 text-sm font-semibold text-blue-300 transition hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {buyerLoading && selectedMarket?.countryCode === market.countryCode
+                        ? "Finding buyers..."
+                        : "Find Buyers →"}
+                    </button>
+
                   </article>
                 ))}
               </div>
             )}
+
+            <section className="mt-10 rounded-3xl border border-slate-800 bg-slate-950/70 p-6 sm:p-8">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
+                    Buyer Intelligence
+                  </p>
+
+                  <h3 className="mt-2 text-2xl font-bold tracking-tight">
+                    Find buyers for the selected market.
+                  </h3>
+
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                    Buyer discovery runs only for the market you select,
+                    so provider credits are not consumed across every market.
+                  </p>
+                </div>
+
+                {selectedMarket && (
+                  <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm">
+                    <span className="text-slate-500">Selected market:</span>{" "}
+                    <span className="font-semibold text-white">
+                      {selectedMarket.country}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {!selectedMarket && !buyerLoading && (
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-6 text-center">
+                  <p className="text-sm text-slate-400">
+                    Select <span className="font-semibold text-blue-300">Find Buyers</span>
+                    on any market above to start buyer discovery.
+                  </p>
+                </div>
+              )}
+
+              {buyerLoading && (
+                <div className="mt-6 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 text-center">
+                  <p className="text-sm font-medium text-blue-300">
+                    Finding buyers and evaluating evidence...
+                  </p>
+                </div>
+              )}
+
+              {!buyerLoading && buyerError && (
+                <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+                  <p className="text-sm font-semibold text-amber-300">
+                    Buyer discovery unavailable
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    {buyerError}
+                  </p>
+                </div>
+              )}
+
+              {!buyerLoading && !buyerError && selectedMarket && buyerSummary && (
+                <>
+                  <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <Signal title="Buyers" value={String(buyerSummary.total)} />
+                    <Signal title="High signal" value={String(buyerSummary.highSignal)} />
+                    <Signal title="Verified" value={String(buyerSummary.verified)} />
+                    <Signal title="Needs verification" value={String(buyerSummary.partiallyVerified)} />
+                  </div>
+
+                  {buyerProvider && (
+                    <p className="mt-4 text-xs text-slate-600">
+                      Source provider: {buyerProvider}
+                    </p>
+                  )}
+
+                  {buyers.length > 0 ? (
+                    <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                      {buyers.map((item) => (
+                        <article
+                          key={item.buyer.id}
+                          className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <h4 className="font-semibold text-white">
+                                {item.buyer.companyName}
+                              </h4>
+
+                              <p className="mt-1 text-xs text-slate-500">
+                                {item.buyer.country ?? "Unknown country"}
+                              </p>
+                            </div>
+
+                            <span className="rounded-full border border-slate-700 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-300">
+                              {item.intelligence.signal}
+                            </span>
+                          </div>
+
+                          <div className="mt-5 grid grid-cols-2 gap-3">
+                            <div className="rounded-xl bg-slate-950 p-3">
+                              <p className="text-xs text-slate-500">
+                                Matched shipments
+                              </p>
+                              <p className="mt-1 text-lg font-semibold">
+                                {item.buyer.matchingShipments ?? "—"}
+                              </p>
+                            </div>
+
+                            <div className="rounded-xl bg-slate-950 p-3">
+                              <p className="text-xs text-slate-500">
+                                Evidence
+                              </p>
+                              <p className="mt-1 text-lg font-semibold">
+                                {item.evidence.score}/100
+                              </p>
+                            </div>
+
+                            <div className="rounded-xl bg-slate-950 p-3">
+                              <p className="text-xs text-slate-500">
+                                Verification
+                              </p>
+                              <p className="mt-1 text-sm font-semibold">
+                                {item.verification.status}
+                              </p>
+                            </div>
+
+                            <div className="rounded-xl bg-slate-950 p-3">
+                              <p className="text-xs text-slate-500">
+                                Readiness
+                              </p>
+                              <p className="mt-1 text-sm font-semibold">
+                                {item.readiness}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 border-t border-slate-800 pt-4">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                              Next action
+                            </p>
+
+                            <p className="mt-2 text-sm leading-6 text-slate-300">
+                              {item.intelligence.nextAction}
+                            </p>
+                          </div>
+
+                          {item.buyer.companyLink && (
+                            <a
+                              href={item.buyer.companyLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-5 inline-flex text-sm font-semibold text-blue-400 hover:text-blue-300"
+                            >
+                              Open company record →
+                            </a>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-6 text-center">
+                      <p className="text-sm text-slate-400">
+                        The provider returned no buyer records for this market.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
 
             <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
               <div className="flex gap-3">
@@ -453,10 +756,10 @@ export default function Home() {
                   </p>
 
                   <p className="mt-1 text-sm leading-6 text-slate-400">
-                    This version uses real UN Comtrade import data to
-                    rank markets by import value. Competition,
-                    buyer discovery, market access, and origin-specific
-                    opportunity scoring will be added as separate
+                    This MVP combines real UN Comtrade market intelligence
+                    with a separate buyer discovery layer. Live buyer data
+                    requires a configured provider. Competition, market
+                    access, and final opportunity scoring remain future
                     evidence layers.
                   </p>
                 </div>

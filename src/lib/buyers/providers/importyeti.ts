@@ -54,6 +54,13 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
         status: "unavailable",
         buyers: [],
         reason: "missing_credentials",
+        meta: {
+          provider: this.name,
+          requestCost: null,
+          creditsRemaining: null,
+          requestId: null,
+          fetchedAt: new Date().toISOString(),
+        },
       };
     }
 
@@ -62,6 +69,13 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
         status: "unavailable",
         buyers: [],
         reason: "unsupported_market",
+        meta: {
+          provider: this.name,
+          requestCost: null,
+          creditsRemaining: null,
+          requestId: null,
+          fetchedAt: new Date().toISOString(),
+        },
       };
     }
 
@@ -72,6 +86,13 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
         status: "unavailable",
         buyers: [],
         reason: "missing_product_query",
+        meta: {
+          provider: this.name,
+          requestCost: null,
+          creditsRemaining: null,
+          requestId: null,
+          fetchedAt: new Date().toISOString(),
+        },
       };
     }
 
@@ -99,7 +120,19 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
         return {
           status: "unavailable",
           buyers: [],
-          reason: "provider_error",
+          reason:
+            response.status === 403
+              ? "insufficient_credits"
+              : response.status === 429
+                ? "rate_limited"
+                : "provider_error",
+          meta: {
+            provider: this.name,
+            requestCost: null,
+            creditsRemaining: null,
+            requestId: response.headers.get("x-request-id"),
+            fetchedAt: new Date().toISOString(),
+          },
         };
       }
 
@@ -174,12 +207,32 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
       return {
         status: "available",
         buyers,
+        meta: {
+          provider: this.name,
+          requestCost:
+            typeof payload.requestCost === "number"
+              ? payload.requestCost
+              : null,
+          creditsRemaining:
+            typeof payload.creditsRemaining === "number"
+              ? payload.creditsRemaining
+              : null,
+          requestId: response.headers.get("x-request-id"),
+          fetchedAt: new Date().toISOString(),
+        },
       };
     } catch {
       return {
         status: "unavailable",
         buyers: [],
         reason: "provider_error",
+        meta: {
+          provider: this.name,
+          requestCost: null,
+          creditsRemaining: null,
+          requestId: null,
+          fetchedAt: new Date().toISOString(),
+        },
       };
     }
   }

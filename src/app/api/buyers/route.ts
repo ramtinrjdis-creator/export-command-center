@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
       hsCode,
       marketCountryCode: market,
       buyers: [],
+      providerMeta: result.meta,
       summary: {
         total: 0,
         highSignal: 0,
@@ -75,6 +76,7 @@ export async function GET(request: NextRequest) {
     hsCode,
     marketCountryCode: market,
     buyers: analyzedBuyers,
+    providerMeta: result.meta,
 
     summary: {
       total: analyzedBuyers.length,

@@ -5,26 +5,18 @@ import type {
 } from "../types";
 
 export class MockBuyerProvider implements BuyerDataProvider {
-  name = "mock-development";
+  name = "mock";
 
   async searchBuyers(
     _input: BuyerSearchInput
   ): Promise<BuyerProviderResult> {
-    if (process.env.NODE_ENV !== "development") {
-      return {
-        status: "unavailable",
-        buyers: [],
-        reason: "provider_error",
-      };
-    }
-
     return {
       status: "available",
       buyers: [
         {
           id: "dev-buyer-001",
           companyName: "Development Buyer",
-      companyLink: "https://example.com/development-buyer",
+          companyLink: "https://example.com/development-buyer",
           countryCode: 276,
           country: "Germany",
           shipmentCount: 24,
@@ -38,6 +30,13 @@ export class MockBuyerProvider implements BuyerDataProvider {
           evidenceStatus: "strong",
         },
       ],
+      meta: {
+        provider: this.name,
+        requestCost: 0,
+        creditsRemaining: null,
+        requestId: null,
+        fetchedAt: new Date().toISOString(),
+      },
     };
   }
 }

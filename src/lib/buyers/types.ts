@@ -22,10 +22,19 @@ export type BuyerRecord = {
   evidenceStatus: "strong" | "moderate" | "limited";
 };
 
+export type BuyerProviderMeta = {
+  provider: string;
+  requestCost: number | null;
+  creditsRemaining: number | null;
+  requestId: string | null;
+  fetchedAt: string;
+};
+
 export type BuyerProviderResult =
   | {
       status: "available";
       buyers: BuyerRecord[];
+      meta: BuyerProviderMeta;
     }
   | {
       status: "unavailable";
@@ -34,11 +43,15 @@ export type BuyerProviderResult =
         | "missing_credentials"
         | "provider_error"
         | "unsupported_market"
-        | "missing_product_query";
+        | "missing_product_query"
+        | "insufficient_credits"
+        | "rate_limited";
+      meta: BuyerProviderMeta;
     };
 
 export interface BuyerDataProvider {
   name: string;
+
   searchBuyers(
     input: BuyerSearchInput
   ): Promise<BuyerProviderResult>;
