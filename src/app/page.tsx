@@ -21,6 +21,9 @@ type Market = {
     evidenceScore: number;
     evidenceLabel: "High" | "Medium" | "Low";
     evidenceStatus: "strong" | "moderate" | "limited" | "unavailable";
+    decisionSignal: "promising" | "watch" | "insufficient-evidence";
+    decisionLabel: string;
+    nextAction: string;
     evidence: {
       key: string;
       label: string;
