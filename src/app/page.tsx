@@ -17,6 +17,20 @@ type Market = {
   originExportValue: number | null;
   originExportStatus: "recorded" | "no_record" | "unavailable" | null;
   originShare: number | null;
+  intelligence: {
+    confidence: number;
+    confidenceLabel: "High" | "Medium" | "Low";
+    evidenceStatus: "strong" | "moderate" | "limited" | "unavailable";
+    evidence: {
+      key: string;
+      label: string;
+      value: string;
+      status: "strong" | "moderate" | "limited" | "unavailable";
+      source: string;
+      note?: string;
+    }[];
+    limitations: string[];
+  };
 };
 
 type AnalysisResponse = {
@@ -351,6 +365,26 @@ export default function Home() {
 
                       <div className="rounded-xl bg-slate-900 p-3">
                         <div className="text-xs text-slate-500">
+                          Confidence
+                        </div>
+
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold">
+                            {market.intelligence.confidence}/100
+                          </span>
+
+                          <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                            {market.intelligence.confidenceLabel}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 text-xs text-slate-500">
+                          Evidence: {market.intelligence.evidenceStatus}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-900 p-3">
+                        <div className="text-xs text-slate-500">
                           Quantity
                         </div>
 
@@ -362,6 +396,27 @@ export default function Home() {
                             : "—"}
                         </div>
                       </div>
+                    </div>
+
+                    <div className="mt-5 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                        Evidence
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        {market.intelligence.evidence.map((item) => (
+                          <div key={item.key} className="flex items-start justify-between gap-3 text-xs">
+                            <span className="text-slate-400">{item.label}</span>
+                            <span className="text-right font-medium text-slate-200">{item.value}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {market.intelligence.limitations.length > 0 && (
+                        <div className="mt-3 border-t border-slate-800 pt-3 text-xs leading-5 text-amber-300">
+                          {market.intelligence.limitations[0]}
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-5 flex items-center justify-between border-t border-slate-800 pt-4">

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { buildMarketIntelligence } from "@/lib/intelligence";
 
 const COMTRADE_BASE =
   "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
@@ -356,6 +357,16 @@ export async function GET(request: Request) {
             : Math.round(growthSignal),
         dataQuality,
         marketQuality: Math.min(100, marketQuality),
+        intelligence: buildMarketIntelligence({
+          importValue: market.importValue,
+          previousImportValue: market.previousImportValue,
+          growthRate: market.growthRate,
+          isReported: market.isReported,
+          isEstimated: market.isEstimated,
+          originExportValue: market.originExportValue,
+          originExportStatus: market.originExportStatus,
+          originShare: market.originShare,
+        }),
       };
     });
 
