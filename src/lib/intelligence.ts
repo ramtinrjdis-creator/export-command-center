@@ -9,6 +9,11 @@ export type DecisionSignal =
   | "watch"
   | "insufficient-evidence";
 
+export type MarketPriority =
+  | "priority"
+  | "monitor"
+  | "research";
+
 export type EvidenceItem = {
   key: string;
   label: string;
@@ -35,6 +40,7 @@ export type MarketIntelligenceInput = {
 };
 
 export type MarketIntelligence = {
+  marketPriority: MarketPriority;
   evidenceScore: number;
   evidenceLabel: "High" | "Medium" | "Low";
   evidenceStatus: EvidenceStatus;
@@ -223,7 +229,15 @@ export function buildMarketIntelligence(
     evidenceScore
   );
 
+  const marketPriority: MarketPriority =
+    decisionSignal === "promising" && evidenceScore >= 70
+      ? "priority"
+      : decisionSignal === "watch" && evidenceScore >= 50
+        ? "monitor"
+        : "research";
+
   return {
+    marketPriority,
     evidenceScore,
     evidenceLabel: getEvidenceLabel(evidenceScore),
     evidenceStatus: getEvidenceStatus(evidenceScore),
