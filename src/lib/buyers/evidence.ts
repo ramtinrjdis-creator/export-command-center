@@ -20,44 +20,99 @@ export function evaluateBuyerEvidence(
   const signals: string[] = [];
   const limitations: string[] = [];
 
+  // Source quality
   if (buyer.evidenceStatus === "strong") {
-    score += 40;
+    score += 30;
     signals.push("Strong source evidence is available.");
   } else if (buyer.evidenceStatus === "moderate") {
-    score += 25;
+    score += 20;
     signals.push("Moderate source evidence is available.");
   } else {
-    score += 10;
+    score += 8;
     signals.push("Only limited source evidence is available.");
   }
 
-  if (buyer.shipmentCount !== null) {
-    if (buyer.shipmentCount >= 20) {
-      score += 25;
-      signals.push("High shipment activity is recorded.");
-    } else if (buyer.shipmentCount >= 5) {
-      score += 15;
-      signals.push("Meaningful shipment activity is recorded.");
-    } else if (buyer.shipmentCount > 0) {
-      score += 8;
-      signals.push("Some shipment activity is recorded.");
+  // Product-specific shipment evidence is stronger than lifetime shipments.
+  if (buyer.matchingShipments !== null) {
+    if (buyer.matchingShipments >= 20) {
+      score += 30;
+      signals.push("High product-matched shipment activity is recorded.");
+    } else if (buyer.matchingShipments >= 5) {
+      score += 22;
+      signals.push("Meaningful product-matched shipment activity is recorded.");
+    } else if (buyer.matchingShipments > 0) {
+      score += 12;
+      signals.push("Product-matched shipment activity is recorded.");
+    } else {
+      limitations.push("No product-matched shipment activity is recorded.");
     }
   } else {
-    limitations.push("Shipment activity is unavailable.");
+    limitations.push("Product-matched shipment activity is unavailable.");
+  }
+
+  // Lifetime shipment activity is supporting evidence only.
+  if (buyer.shipmentCount !== null) {
+    if (buyer.shipmentCount >= 50) {
+      score += 10;
+      signals.push("High overall shipment activity is recorded.");
+    } else if (buyer.shipmentCount >= 10) {
+      score += 7;
+      signals.push("Meaningful overall shipment activity is recorded.");
+    } else if (buyer.shipmentCount > 0) {
+      score += 3;
+      signals.push("Some overall shipment activity is recorded.");
+    }
+  } else {
+    limitations.push("Overall shipment activity is unavailable.");
+  }
+
+  // ImportYeti relevance signal.
+  if (buyer.relevanceScore !== null) {
+    if (buyer.relevanceScore >= 70) {
+      score += 15;
+      signals.push("Strong product relevance is recorded.");
+    } else if (buyer.relevanceScore >= 40) {
+      score += 8;
+      signals.push("Moderate product relevance is recorded.");
+    } else {
+      limitations.push("Product relevance is weak.");
+    }
+  } else {
+    limitations.push("Product relevance score is unavailable.");
+  }
+
+  // ImportYeti specialization signal.
+  if (buyer.specialization !== null) {
+    if (buyer.specialization >= 70) {
+      score += 10;
+      signals.push("Strong product specialization is recorded.");
+    } else if (buyer.specialization >= 40) {
+      score += 5;
+      signals.push("Moderate product specialization is recorded.");
+    }
+  } else {
+    limitations.push("Product specialization is unavailable.");
+  }
+
+  // Supplier breadth is supporting context, not direct buyer proof.
+  if (buyer.supplierCount !== null && buyer.supplierCount > 0) {
+    score += 5;
+    signals.push("Supplier relationship evidence is available.");
+  } else {
+    limitations.push("Supplier relationship evidence is unavailable.");
+  }
+
+  // A product match string alone is weak evidence.
+  if (buyer.productMatch) {
+    signals.push("Product match information is available.");
+  } else {
+    limitations.push("Product match information is unavailable.");
   }
 
   if (buyer.lastShipmentDate) {
-    score += 20;
     signals.push("Shipment date evidence is available.");
   } else {
     limitations.push("Recent shipment evidence is unavailable.");
-  }
-
-  if (buyer.productMatch) {
-    score += 15;
-    signals.push("Product match evidence is available.");
-  } else {
-    limitations.push("Product match evidence is unavailable.");
   }
 
   score = Math.min(100, score);

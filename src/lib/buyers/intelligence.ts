@@ -17,42 +17,82 @@ export function analyzeBuyer(buyer: BuyerRecord): BuyerIntelligence {
   let score = 0;
   const reasons: string[] = [];
 
+  // Source quality
   if (buyer.evidenceStatus === "strong") {
-    score += 40;
+    score += 25;
     reasons.push("Strong buyer evidence.");
   } else if (buyer.evidenceStatus === "moderate") {
-    score += 25;
+    score += 15;
     reasons.push("Moderate buyer evidence.");
   } else {
-    score += 10;
+    score += 5;
     reasons.push("Limited buyer evidence.");
   }
 
-  if (buyer.shipmentCount !== null) {
-    if (buyer.shipmentCount >= 20) {
-      score += 30;
-      reasons.push("High shipment activity.");
-    } else if (buyer.shipmentCount >= 5) {
-      score += 20;
-      reasons.push("Meaningful shipment activity.");
-    } else if (buyer.shipmentCount > 0) {
-      score += 10;
-      reasons.push("Some shipment activity recorded.");
+  // Product-specific shipment activity is the strongest behavioral signal.
+  if (buyer.matchingShipments !== null) {
+    if (buyer.matchingShipments >= 20) {
+      score += 35;
+      reasons.push("High product-matched shipment activity.");
+    } else if (buyer.matchingShipments >= 5) {
+      score += 25;
+      reasons.push("Meaningful product-matched shipment activity.");
+    } else if (buyer.matchingShipments > 0) {
+      score += 12;
+      reasons.push("Product-matched shipment activity recorded.");
+    } else {
+      reasons.push("No product-matched shipment activity recorded.");
     }
   } else {
-    reasons.push("Shipment activity is unavailable.");
+    reasons.push("Product-matched shipment activity is unavailable.");
+  }
+
+  // Lifetime activity is supporting evidence, not product proof.
+  if (buyer.shipmentCount !== null) {
+    if (buyer.shipmentCount >= 50) {
+      score += 10;
+      reasons.push("High overall shipment activity.");
+    } else if (buyer.shipmentCount >= 10) {
+      score += 7;
+      reasons.push("Meaningful overall shipment activity.");
+    } else if (buyer.shipmentCount > 0) {
+      score += 3;
+      reasons.push("Some overall shipment activity recorded.");
+    }
+  }
+
+  // Provider relevance
+  if (buyer.relevanceScore !== null) {
+    if (buyer.relevanceScore >= 70) {
+      score += 15;
+      reasons.push("Strong product relevance.");
+    } else if (buyer.relevanceScore >= 40) {
+      score += 8;
+      reasons.push("Moderate product relevance.");
+    }
+  }
+
+  // Provider specialization
+  if (buyer.specialization !== null) {
+    if (buyer.specialization >= 70) {
+      score += 10;
+      reasons.push("Strong product specialization.");
+    } else if (buyer.specialization >= 40) {
+      score += 5;
+      reasons.push("Moderate product specialization.");
+    }
+  }
+
+  // Supplier breadth is supporting context only.
+  if (buyer.supplierCount !== null && buyer.supplierCount > 0) {
+    score += 5;
+    reasons.push("Supplier relationship evidence available.");
   }
 
   if (buyer.lastShipmentDate) {
-    score += 20;
-    reasons.push("Recent shipment evidence is available.");
+    reasons.push("Shipment date evidence is available.");
   } else {
     reasons.push("Recent shipment evidence is unavailable.");
-  }
-
-  if (buyer.productMatch) {
-    score += 10;
-    reasons.push("Product match information is available.");
   }
 
   score = Math.min(100, Math.round(score));
@@ -70,9 +110,9 @@ export function analyzeBuyer(buyer: BuyerRecord): BuyerIntelligence {
     signal === "high-signal"
       ? "Verify the company and identify the appropriate decision-maker before outreach."
       : signal === "medium-signal"
-        ? "Validate recent activity and company details before outreach."
+        ? "Validate product activity, company details, and recency before outreach."
         : signal === "low-signal"
-          ? "Collect stronger shipment and company evidence."
+          ? "Collect stronger product-specific shipment and company evidence."
           : "Connect a live buyer data source before prioritizing this buyer.";
 
   return {
