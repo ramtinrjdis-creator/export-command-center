@@ -12,8 +12,8 @@ export type MarketIntelligenceInput = {
 };
 
 export type MarketIntelligence = {
-  confidence: number;
-  confidenceLabel: "High" | "Medium" | "Low";
+  evidenceScore: number;
+  evidenceLabel: "High" | "Medium" | "Low";
   evidenceStatus: EvidenceStatus;
   evidence: EvidenceItem[];
   limitations: string[];
@@ -23,30 +23,30 @@ function clamp(value: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, value));
 }
 
-function getConfidenceLabel(
-  confidence: number
-): MarketIntelligence["confidenceLabel"] {
-  if (confidence >= 75) return "High";
-  if (confidence >= 50) return "Medium";
+function getEvidenceLabel(
+  evidenceScore: number
+): MarketIntelligence["evidenceLabel"] {
+  if (evidenceScore >= 75) return "High";
+  if (evidenceScore >= 50) return "Medium";
   return "Low";
 }
 
-function getEvidenceStatus(confidence: number): EvidenceStatus {
-  if (confidence >= 75) return "strong";
-  if (confidence >= 50) return "moderate";
-  if (confidence > 0) return "limited";
+function getEvidenceStatus(evidenceScore: number): EvidenceStatus {
+  if (evidenceScore >= 75) return "strong";
+  if (evidenceScore >= 50) return "moderate";
+  if (evidenceScore > 0) return "limited";
   return "unavailable";
 }
 
 export function buildMarketIntelligence(
   input: MarketIntelligenceInput
 ): MarketIntelligence {
-  let confidence = 40;
+  let evidenceScore = 40;
   const evidence: EvidenceItem[] = [];
   const limitations: string[] = [];
 
   if (input.importValue > 0) {
-    confidence += 20;
+    evidenceScore += 20;
     evidence.push({
       key: "import-demand",
       label: "Import demand",
@@ -63,7 +63,7 @@ export function buildMarketIntelligence(
     input.previousImportValue > 0 &&
     input.growthRate !== null
   ) {
-    confidence += 15;
+    evidenceScore += 15;
     evidence.push({
       key: "growth",
       label: "Year-over-year growth",
@@ -81,7 +81,7 @@ export function buildMarketIntelligence(
   }
 
   if (input.isReported && !input.isEstimated) {
-    confidence += 10;
+    evidenceScore += 10;
     evidence.push({
       key: "data-quality",
       label: "Data quality",
@@ -90,7 +90,7 @@ export function buildMarketIntelligence(
       source: "UN Comtrade",
     });
   } else if (input.isEstimated) {
-    confidence += 3;
+    evidenceScore += 3;
     evidence.push({
       key: "data-quality",
       label: "Data quality",
@@ -109,7 +109,7 @@ export function buildMarketIntelligence(
     input.originExportStatus === "recorded" &&
     input.originExportValue !== null
   ) {
-    confidence += 10;
+    evidenceScore += 10;
     evidence.push({
       key: "origin-signal",
       label: "Origin-to-market export signal",
@@ -132,12 +132,12 @@ export function buildMarketIntelligence(
     );
   }
 
-  confidence = clamp(Math.round(confidence));
+  evidenceScore = clamp(Math.round(evidenceScore));
 
   return {
-    confidence,
-    confidenceLabel: getConfidenceLabel(confidence),
-    evidenceStatus: getEvidenceStatus(confidence),
+    evidenceScore,
+    evidenceLabel: getEvidenceLabel(evidenceScore),
+    evidenceStatus: getEvidenceStatus(evidenceScore),
     evidence,
     limitations,
   };
