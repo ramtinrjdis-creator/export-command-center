@@ -5,6 +5,8 @@ import { buildOpportunitySignal } from "@/lib/opportunity";
 const COMTRADE_BASE =
   "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
 
+const COMTRADE_TIMEOUT_MS = 10_000;
+
 const COUNTRY_NAMES: Record<number, string> = {
   12: "Algeria",
   36: "Australia",
@@ -168,6 +170,7 @@ async function fetchYear(
       Accept: "application/json",
     },
     cache: "no-store",
+    signal: AbortSignal.timeout(COMTRADE_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -249,6 +252,7 @@ async function fetchBilateralExport(
             Accept: "application/json",
           },
           cache: "no-store",
+          signal: AbortSignal.timeout(COMTRADE_TIMEOUT_MS),
         }
       );
 
