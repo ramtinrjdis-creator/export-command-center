@@ -772,7 +772,7 @@ export default function Home() {
 
                             <div className="rounded-xl bg-slate-950 p-3">
                               <p className="text-xs text-slate-500">
-                                Evidence
+                                Evidence strength
                               </p>
                               <p className="mt-1 text-lg font-semibold">
                                 {item.evidence.score}/100
