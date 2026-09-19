@@ -733,11 +733,17 @@ export default function Home() {
                     <Signal title="Needs verification" value={String(buyerSummary.partiallyVerified)} />
                   </div>
 
-                  {buyerProvider && (
+                  {buyerProvider === "mock" ? (
+                    <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+                      <p className="text-xs font-semibold text-amber-300">
+                        Development test data — not live buyer evidence
+                      </p>
+                    </div>
+                  ) : buyerProvider ? (
                     <p className="mt-4 text-xs text-slate-600">
                       Source provider: {buyerProvider}
                     </p>
-                  )}
+                  ) : null}
 
                   {buyers.length > 0 ? (
                     <div className="mt-6 grid gap-4 lg:grid-cols-2">
