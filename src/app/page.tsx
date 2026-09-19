@@ -798,9 +798,22 @@ export default function Home() {
                             </div>
                           </div>
 
+                          {item.evidence.limitations.length > 0 && (
+                            <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+                                Evidence gaps
+                              </p>
+                              <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-400">
+                                {item.evidence.limitations.map((limitation) => (
+                                  <li key={limitation}>! {limitation}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
                           <div className="mt-5 border-t border-slate-800 pt-4">
                             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                              Next action
+                              Evidence → Action
                             </p>
 
                             <p className="mt-2 text-sm leading-6 text-slate-300">
