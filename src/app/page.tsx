@@ -725,7 +725,7 @@ export default function Home() {
               {!buyerLoading && !buyerError && selectedMarket && buyerSummary && (
                 <>
                   <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <Signal title="Buyers" value={String(buyerSummary.total)} />
+                    <Signal title="Buyers found" value={String(buyerSummary.total)} />
                     <Signal title="Strong evidence" value={String(buyerSummary.highSignal)} />
                     <Signal title="Verified" value={String(buyerSummary.verified)} />
                     <Signal title="Needs verification" value={String(buyerSummary.partiallyVerified)} />
