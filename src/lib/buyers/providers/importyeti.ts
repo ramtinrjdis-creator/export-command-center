@@ -9,6 +9,8 @@ import { normalizeBuyer } from "../normalize";
 const BASE_URL =
   "https://data.importyeti.com/v1.0/product";
 
+const IMPORTYETI_TIMEOUT_MS = 10_000;
+
 type ImportYetiProductCompany = {
   company_link?: string;
   company_name?: string;
@@ -31,6 +33,24 @@ type ImportYetiResponse = {
     totalCompanies?: number;
   };
 };
+
+function isImportYetiResponse(value: unknown): value is ImportYetiResponse {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const payload = value as Record<string, unknown>;
+  const data = payload.data;
+
+  return (
+    data === undefined ||
+    (
+      typeof data === "object" &&
+      data !== null &&
+      Array.isArray((data as Record<string, unknown>).data)
+    )
+  );
+}
 
 function normalizeCompanyId(name: string, index: number): string {
   const slug = name
@@ -113,6 +133,7 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
             Accept: "application/json",
           },
           cache: "no-store",
+          signal: AbortSignal.timeout(IMPORTYETI_TIMEOUT_MS),
         }
       );
 
@@ -136,9 +157,24 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
         };
       }
 
-      const payload =
-        (await response.json()) as ImportYetiResponse;
+      const rawPayload: unknown = await response.json();
 
+      if (!isImportYetiResponse(rawPayload)) {
+        return {
+          status: "unavailable",
+          buyers: [],
+          reason: "provider_error",
+          meta: {
+            provider: this.name,
+            requestCost: null,
+            creditsRemaining: null,
+            requestId: response.headers.get("x-request-id"),
+            fetchedAt: new Date().toISOString(),
+          },
+        };
+      }
+
+      const payload = rawPayload;
       const rows = payload.data?.data ?? [];
 
       const buyers: BuyerRecord[] = rows
