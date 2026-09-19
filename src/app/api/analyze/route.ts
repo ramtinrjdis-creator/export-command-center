@@ -102,7 +102,25 @@ type ComtradeRecord = {
 };
 
 function isComtradeRecord(value: unknown): value is ComtradeRecord {
-  return typeof value === "object" && value !== null;
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  const reporterCode = record.reporterCode;
+  const primaryValue = record.primaryValue;
+
+  const validReporterCode =
+    typeof reporterCode === "number" ||
+    typeof reporterCode === "string";
+
+  const validPrimaryValue =
+    primaryValue === null ||
+    primaryValue === undefined ||
+    typeof primaryValue === "number" ||
+    typeof primaryValue === "string";
+
+  return validReporterCode && validPrimaryValue;
 }
 
 type BilateralExportResult =
@@ -180,13 +198,17 @@ async function fetchYear(
   }
 
   const data: unknown = await response.json();
-  const records =
-    typeof data === "object" &&
-    data !== null &&
-    "data" in data &&
-    Array.isArray(data.data)
-      ? data.data.filter(isComtradeRecord)
-      : [];
+
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("data" in data) ||
+    !Array.isArray(data.data)
+  ) {
+    throw new Error("Unexpected Comtrade response format.");
+  }
+
+  const records = data.data.filter(isComtradeRecord);
 
   return records
     .filter(
