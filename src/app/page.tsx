@@ -675,7 +675,7 @@ export default function Home() {
                   </p>
 
                   <h3 className="mt-2 text-2xl font-bold tracking-tight">
-                    Find buyers for the selected market.
+                    Identify buyers worth investigating.
                   </h3>
 
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
@@ -790,7 +790,7 @@ export default function Home() {
 
                             <div className="rounded-xl bg-slate-950 p-3">
                               <p className="text-xs text-slate-500">
-                                Readiness
+                                Workflow status
                               </p>
                               <p className="mt-1 text-sm font-semibold">
                                 {item.readiness === "outreach-ready" ? "Ready for outreach review" : item.readiness === "needs-verification" ? "Needs verification" : "Research required"}
