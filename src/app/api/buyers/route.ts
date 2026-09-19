@@ -31,12 +31,50 @@ export async function GET(request: NextRequest) {
 
   const provider = getBuyerProvider();
 
-  const result = await provider.searchBuyers({
-    hsCode,
-    marketCountryCode: market,
-    productDescription: productDescription || undefined,
-    limit: safeLimit,
-  });
+  let result: Awaited<ReturnType<typeof provider.searchBuyers>>;
+
+  try {
+    result = await provider.searchBuyers({
+      hsCode,
+      marketCountryCode: market,
+      productDescription: productDescription || undefined,
+      limit: safeLimit,
+    });
+  } catch (error) {
+    console.error("Buyer discovery error:", error);
+
+    return NextResponse.json(
+      {
+        available: false,
+        provider: provider.name,
+        status: "unavailable",
+        reason: "provider_error",
+        hsCode,
+        marketCountryCode: market,
+        buyers: [],
+        providerMeta: {
+          provider: provider.name,
+          requestCost: null,
+          creditsRemaining: null,
+          requestId: null,
+          fetchedAt: new Date().toISOString(),
+        },
+        summary: {
+          total: 0,
+          highSignal: 0,
+          mediumSignal: 0,
+          lowSignal: 0,
+          verified: 0,
+          partiallyVerified: 0,
+          unverified: 0,
+        },
+        limitations: [
+          "Buyer discovery is temporarily unavailable. Please try again.",
+        ],
+      },
+      { status: 502 }
+    );
+  }
 
   if (result.status === "unavailable") {
     return NextResponse.json({
