@@ -672,6 +672,9 @@ export default function Home() {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
                     Buyer Intelligence
+                    <span className="ml-2 inline-flex rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wider text-blue-300">
+                      Evidence layer
+                    </span>
                   </p>
 
                   <h3 className="mt-2 text-2xl font-bold tracking-tight">
@@ -679,8 +682,7 @@ export default function Home() {
                   </h3>
 
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                    Buyer discovery runs only for the market you select,
-                    so provider credits are not consumed across every market.
+                    Buyer discovery runs only for the market you select. Signals describe evidence strength and verification — not a guarantee that a company will buy.
                   </p>
                 </div>
 
