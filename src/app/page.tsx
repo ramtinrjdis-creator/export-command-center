@@ -449,7 +449,7 @@ export default function Home() {
                         </p>
 
                         <p className="mt-1 text-xs text-slate-500">
-                          Import demand signal
+                          Relative import demand
                         </p>
                       </div>
 
@@ -514,7 +514,7 @@ export default function Home() {
 
                       <div className="rounded-xl bg-slate-900 p-3">
                         <div className="text-xs text-slate-500">
-                          Evidence Strength
+                          Evidence coverage
                         </div>
 
                         <div className="mt-1 flex items-center justify-between gap-2">
