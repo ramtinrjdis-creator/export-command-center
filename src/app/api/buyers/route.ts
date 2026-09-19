@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   const productDescription =
     searchParams.get("productDescription")?.trim() ?? "";
   const limit = Number(searchParams.get("limit") ?? "20");
+  const MAX_PRODUCT_DESCRIPTION_LENGTH = 200;
 
   if (!/^[0-9]{2,6}$/.test(hsCode)) {
     return NextResponse.json(
@@ -17,9 +18,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (!Number.isInteger(market) || market < 0) {
+  if (!Number.isInteger(market) || market <= 0 || market > 999) {
     return NextResponse.json(
       { error: "market must be a valid country code." },
+      { status: 400 }
+    );
+  }
+
+  if (productDescription.length > MAX_PRODUCT_DESCRIPTION_LENGTH) {
+    return NextResponse.json(
+      {
+        error:
+          "productDescription must be 200 characters or fewer.",
+      },
       { status: 400 }
     );
   }
