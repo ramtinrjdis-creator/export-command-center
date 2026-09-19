@@ -756,7 +756,7 @@ export default function Home() {
                             </div>
 
                             <span className="rounded-full border border-slate-700 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-300">
-                              {item.intelligence.signal}
+                              {item.intelligence.signal === "high-signal" ? "Strong evidence" : item.intelligence.signal === "medium-signal" ? "Moderate evidence" : item.intelligence.signal === "low-signal" ? "Limited evidence" : "Insufficient evidence"}
                             </span>
                           </div>
 
@@ -784,7 +784,7 @@ export default function Home() {
                                 Verification
                               </p>
                               <p className="mt-1 text-sm font-semibold">
-                                {item.verification.status}
+                                {item.verification.status === "verified" ? "Verified signals" : item.verification.status === "partially-verified" ? "Partially verified" : "Unverified"}
                               </p>
                             </div>
 
@@ -793,7 +793,7 @@ export default function Home() {
                                 Readiness
                               </p>
                               <p className="mt-1 text-sm font-semibold">
-                                {item.readiness}
+                                {item.readiness === "outreach-ready" ? "Ready for outreach review" : item.readiness === "needs-verification" ? "Needs verification" : "Research required"}
                               </p>
                             </div>
                           </div>
