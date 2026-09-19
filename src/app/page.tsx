@@ -15,8 +15,20 @@ type Market = {
   growthRate: number | null;
   trend: string;
   originExportValue: number | null;
-  originExportStatus: "recorded" | "no_record" | "unavailable" | null;
+  originExportStatus: "recorded" | "no_record" | "rate_limited" | "unavailable" | null;
   originShare: number | null;
+  opportunity: {
+    signal:
+      | "strong-validation-target"
+      | "validation-target"
+      | "monitor"
+      | "insufficient-evidence";
+    score: number;
+    label: string;
+    reasons: string[];
+    missingEvidence: string[];
+    nextAction: string;
+  };
   intelligence: {
     evidenceScore: number;
     evidenceLabel: "High" | "Medium" | "Low";
@@ -556,6 +568,80 @@ export default function Home() {
                       )}
                     </div>
 
+                    <div className="mt-5 rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wider text-blue-400">
+                            Opportunity Engine
+                          </div>
+
+                          <div className="mt-2 text-base font-semibold text-white">
+                            {market.opportunity.label}
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-blue-400">
+                            {market.opportunity.score}
+                          </div>
+
+                          <div className="text-[10px] uppercase tracking-wider text-slate-600">
+                            Evidence coverage
+                          </div>
+                        </div>
+                      </div>
+
+                      {market.opportunity.reasons.length > 0 && (
+                        <div className="mt-4">
+                          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                            Why this market is flagged
+                          </div>
+
+                          <ul className="mt-2 space-y-2">
+                            {market.opportunity.reasons.slice(0, 3).map((reason) => (
+                              <li
+                                key={reason}
+                                className="flex gap-2 text-xs leading-5 text-slate-300"
+                              >
+                                <span className="text-emerald-400">✓</span>
+                                <span>{reason}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {market.opportunity.missingEvidence.length > 0 && (
+                        <div className="mt-4 border-t border-slate-800 pt-4">
+                          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                            Missing evidence
+                          </div>
+
+                          <ul className="mt-2 space-y-2">
+                            {market.opportunity.missingEvidence.slice(0, 3).map((item) => (
+                              <li
+                                key={item}
+                                className="flex gap-2 text-xs leading-5 text-amber-300"
+                              >
+                                <span>!</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <div className="mt-4 border-t border-slate-800 pt-4">
+                        <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          Next action
+                        </div>
+
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          {market.opportunity.nextAction}
+                        </p>
+                      </div>
+                    </div>
+
                     <div className="mt-5 flex items-center justify-between border-t border-slate-800 pt-4">
                       <span className="text-xs text-slate-500">
                         UN Comtrade
@@ -801,7 +887,7 @@ export default function Home() {
           <Feature
             number="03"
             title="Opportunity Engine"
-            text="Combine multiple verified signals into a transparent priority score and next sales action."
+            text="Combine available evidence into a transparent opportunity signal, show what is missing, and define the next validation action."
           />
         </div>
       </section>
