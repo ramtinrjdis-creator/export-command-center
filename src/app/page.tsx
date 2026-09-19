@@ -763,7 +763,7 @@ export default function Home() {
                           <div className="mt-5 grid grid-cols-2 gap-3">
                             <div className="rounded-xl bg-slate-950 p-3">
                               <p className="text-xs text-slate-500">
-                                Matched shipments
+                                Product-matched shipments
                               </p>
                               <p className="mt-1 text-lg font-semibold">
                                 {item.buyer.matchingShipments ?? "—"}
