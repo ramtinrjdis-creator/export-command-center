@@ -155,15 +155,10 @@ export default function Home() {
   const [product, setProduct] = useState("");
   const [origin, setOrigin] = useState("");
   const [hsCode, setHsCode] = useState("");
-  const [year, setYear] = useState("2024");
+  const [year] = useState("2024");
 
   const [loading, setLoading] = useState(false);
 
-  const priorityRank = {
-    priority: 0,
-    monitor: 1,
-    research: 2,
-  } as const;
   const [searched, setSearched] = useState(false);
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
@@ -172,7 +167,6 @@ export default function Home() {
   const [buyerProvider, setBuyerProvider] = useState("");
   const [buyerLoading, setBuyerLoading] = useState(false);
   const [buyerError, setBuyerError] = useState("");
-  const [buyerUnavailable, setBuyerUnavailable] = useState(false);
   const [error, setError] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -219,7 +213,6 @@ export default function Home() {
     setBuyerSummary(null);
     setBuyerProvider("");
     setBuyerError("");
-    setBuyerUnavailable(false);
     setBuyerLoading(true);
 
     try {
@@ -247,7 +240,6 @@ export default function Home() {
       setBuyerProvider(data.provider ?? "");
       setBuyers(data.buyers ?? []);
       setBuyerSummary(data.summary ?? null);
-      setBuyerUnavailable(!data.available);
 
       if (!data.available && data.limitations?.length) {
         setBuyerError(data.limitations[0]);
@@ -256,7 +248,6 @@ export default function Home() {
       setBuyerError(
         err instanceof Error ? err.message : "Buyer search failed."
       );
-      setBuyerUnavailable(true);
     } finally {
       setBuyerLoading(false);
     }

@@ -1,15 +1,12 @@
 import type {
   BuyerDataProvider,
   BuyerProviderResult,
-  BuyerSearchInput,
 } from "../types";
 
 export class VolzaBuyerProvider implements BuyerDataProvider {
   name = "volza";
 
-  async searchBuyers(
-    _input: BuyerSearchInput
-  ): Promise<BuyerProviderResult> {
+  async searchBuyers(): Promise<BuyerProviderResult> {
     const fetchedAt = new Date().toISOString();
 
     if (!process.env.VOLZA_API_KEY) {

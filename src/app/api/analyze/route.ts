@@ -87,6 +87,22 @@ type TradeMarket = {
   isEstimated: boolean;
 };
 
+type ComtradeRecord = {
+  reporterCode?: number | string | null;
+  primaryValue?: number | string | null;
+  netWgt?: number | string | null;
+  qty?: number | string | null;
+  qtyUnitAbbr?: string | null;
+  netWgtUnitAbbr?: string | null;
+  isReported?: boolean | null;
+  isQtyEstimated?: boolean | null;
+  legacyEstimationFlag?: number | string | null;
+};
+
+function isComtradeRecord(value: unknown): value is ComtradeRecord {
+  return typeof value === "object" && value !== null;
+}
+
 type BilateralExportResult =
   | {
       status: "recorded";
@@ -160,40 +176,37 @@ async function fetchYear(
     );
   }
 
-  const data = await response.json();
-  const records = Array.isArray(data?.data)
-    ? data.data
-    : [];
+  const data: unknown = await response.json();
+  const records =
+    typeof data === "object" &&
+    data !== null &&
+    "data" in data &&
+    Array.isArray(data.data)
+      ? data.data.filter(isComtradeRecord)
+      : [];
 
   return records
     .filter(
-      (item: any) =>
-        item?.reporterCode &&
-        Number(item?.primaryValue || 0) > 0
+      (item) =>
+        item.reporterCode !== null &&
+        item.reporterCode !== undefined &&
+        Number(item.primaryValue ?? 0) > 0
     )
-    .map((item: any) => ({
+    .map((item) => ({
       countryCode: Number(item.reporterCode),
       country:
         COUNTRY_NAMES[Number(item.reporterCode)] ||
         `Market (code: ${Number(item.reporterCode)})`,
-      importValue: Number(
-        item.primaryValue || 0
-      ),
-      quantity: Number(
-        item.netWgt || item.qty || 0
-      ),
+      importValue: Number(item.primaryValue ?? 0),
+      quantity: Number(item.netWgt ?? item.qty ?? 0),
       unit:
         item.qtyUnitAbbr ||
         item.netWgtUnitAbbr ||
         null,
-      isReported: Boolean(
-        item.isReported
-      ),
+      isReported: Boolean(item.isReported),
       isEstimated:
         Boolean(item.isQtyEstimated) ||
-        Number(
-          item.legacyEstimationFlag || 0
-        ) !== 0,
+        Number(item.legacyEstimationFlag ?? 0) !== 0,
     }));
 }
 
@@ -445,12 +458,14 @@ function screenMarkets(
         keep,
       };
     })
-    .filter(
-      (
-        market
-      ): market is ScreenedMarket & {
-        keep: boolean;
-      } => market.keep
+    .reduce<ScreenedMarket[]>(
+      (result, { keep, ...screenedMarket }) => {
+        if (keep) {
+          result.push(screenedMarket);
+        }
+        return result;
+      },
+      []
     )
     .sort((a, b) => {
       const growthA =
@@ -468,8 +483,7 @@ function screenMarkets(
 
       return growthB - growthA;
     })
-    .slice(0, 8)
-    .map(({ keep, ...market }) => market);
+    .slice(0, 8);
 }
 
 export async function GET(

@@ -1,15 +1,12 @@
 import type {
   BuyerDataProvider,
   BuyerProviderResult,
-  BuyerSearchInput,
 } from "../types";
 
 export class MockBuyerProvider implements BuyerDataProvider {
   name = "mock";
 
-  async searchBuyers(
-    _input: BuyerSearchInput
-  ): Promise<BuyerProviderResult> {
+  async searchBuyers(): Promise<BuyerProviderResult> {
     return {
       status: "available",
       buyers: [
