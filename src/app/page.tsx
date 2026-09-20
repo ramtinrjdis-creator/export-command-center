@@ -133,6 +133,18 @@ type AnalysisResponse = {
   hsCode?: string;
   markets?: Market[];
   count?: number;
+  screening?: {
+    methodology: string;
+    globalMarketsReturned: number;
+    screenedMarkets: number;
+    originQueries: number;
+    originDataAvailability:
+      | "available"
+      | "unavailable"
+      | "unknown"
+      | null;
+    maxOriginCandidates: number;
+  };
   evidence?: {
     source: string;
     methodology: string;
@@ -161,12 +173,13 @@ export default function Home() {
   const [product, setProduct] = useState("");
   const [origin, setOrigin] = useState("");
   const [hsCode, setHsCode] = useState("");
-  const [year] = useState("2024");
+  const [year, setYear] = useState("2024");
 
   const [loading, setLoading] = useState(false);
 
   const [searched, setSearched] = useState(false);
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [screening, setScreening] = useState<AnalysisResponse["screening"] | null>(null);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [buyers, setBuyers] = useState<BuyerAnalysis[]>([]);
   const [buyerSummary, setBuyerSummary] = useState<BuyerSummary | null>(null);
@@ -185,6 +198,13 @@ export default function Home() {
     setSearched(false);
     setError("");
     setMarkets([]);
+    setSelectedMarket(null);
+    setBuyers([]);
+    setBuyerSummary(null);
+    setBuyerProvider("");
+    setBuyerError("");
+    setResearchCopied(false);
+    setScreening(null);
 
     try {
       const response = await fetch(
@@ -202,6 +222,7 @@ export default function Home() {
       }
 
       setMarkets(data.markets || []);
+      setScreening(data.screening ?? null);
       setSearched(true);
     } catch (err) {
       setError(
@@ -319,15 +340,15 @@ export default function Home() {
             </div>
 
             <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
-              Find where your product
+              Find the markets worth
               <span className="block text-blue-400">
-                can actually win.
+                your next export move.
               </span>
             </h1>
 
             <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-slate-400 sm:text-lg">
-              Discover promising export markets using real international
-              trade data, then turn evidence into your next sales action.
+              Start with real trade data, see what the evidence supports,
+              and leave with a clear next validation step.
             </p>
           </div>
 
@@ -335,7 +356,7 @@ export default function Home() {
             onSubmit={handleSubmit}
             className="mx-auto mt-12 max-w-5xl rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-2xl shadow-black/30 backdrop-blur sm:p-7"
           >
-            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_0.7fr_auto] lg:items-end">
               <div>
                 <label
                   htmlFor="product"
@@ -349,6 +370,7 @@ export default function Home() {
                   value={product}
                   onChange={(event) => setProduct(event.target.value)}
                   placeholder="e.g. Coffee"
+                  maxLength={120}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3.5 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
@@ -389,6 +411,30 @@ export default function Home() {
                   placeholder="e.g. Iran"
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3.5 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="year"
+                  className="mb-2 block text-sm font-medium text-slate-300"
+                >
+                  Trade Year
+                </label>
+
+                <select
+                  id="year"
+                  value={year}
+                  onChange={(event) => setYear(event.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3.5 text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                >
+                  {["2025", "2024", "2023", "2022", "2021", "2020"].map(
+                    (option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    )
+                  )}
+                </select>
               </div>
 
               <button
@@ -438,7 +484,7 @@ export default function Home() {
                 </p>
 
                 <h2 className="mt-2 text-2xl font-bold">
-                  Import markets for {product}
+                  Markets worth validating for {product}
                 </h2>
 
                 <p className="mt-2 text-sm text-slate-500">
@@ -447,9 +493,55 @@ export default function Home() {
               </div>
 
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-400">
-                {markets.length} markets found
+                {markets.length} validation candidates
               </div>
             </div>
+
+            {screening && (
+              <div className="mb-8 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <p className="text-xs uppercase tracking-wider text-slate-500">
+                    Markets screened
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-white">
+                    {screening.globalMarketsReturned}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Global trade records
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <p className="text-xs uppercase tracking-wider text-slate-500">
+                    Candidates
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-blue-400">
+                    {screening.screenedMarkets}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Passed market screening
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <p className="text-xs uppercase tracking-wider text-slate-500">
+                    Origin evidence
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-white">
+                    {screening.originDataAvailability === "available"
+                      ? "Available"
+                      : screening.originDataAvailability === "unavailable"
+                        ? "Unavailable"
+                        : screening.originDataAvailability === "unknown"
+                          ? "Unknown"
+                          : "Not requested"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Coverage status
+                  </p>
+                </div>
+              </div>
+            )}
 
             {markets.length === 0 ? (
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-8 text-center">
@@ -525,13 +617,11 @@ export default function Home() {
 
                       <div className="rounded-xl bg-slate-900 p-3">
                         <div className="text-xs text-slate-500">
-                          Data status
+                          Quantity status
                         </div>
 
                         <div className="mt-1 text-sm font-semibold">
-                          {market.isEstimated
-                            ? "Estimated"
-                            : "Reported"}
+                          {market.isReported ? "Reported" : "Source data"}
                         </div>
                       </div>
 
@@ -701,11 +791,11 @@ export default function Home() {
                   </p>
 
                   <h3 className="mt-2 text-2xl font-bold tracking-tight">
-                    Identify buyers worth investigating.
+                    Turn a market signal into buyer research.
                   </h3>
 
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                    Buyer discovery runs only for the market you select. Signals describe evidence strength and verification — not a guarantee that a company will buy.
+                    Select a market, investigate relevant companies, and verify evidence before outreach.
                   </p>
                 </div>
 
