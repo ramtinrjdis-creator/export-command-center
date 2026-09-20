@@ -29,7 +29,7 @@ export type MarketIntelligenceInput = {
   growthRate: number | null;
   demandScore: number;
   isReported: boolean;
-  isEstimated: boolean;
+  isQuantityEstimated: boolean;
   originExportValue: number | null;
   originExportStatus:
     | "recorded"
@@ -240,9 +240,9 @@ function calculateEvidenceCoverage(
     score += 20;
   }
 
-  if (input.isReported && !input.isEstimated) {
+  if (input.isReported && !input.isQuantityEstimated) {
     score += 15;
-  } else if (!input.isEstimated) {
+  } else if (!input.isQuantityEstimated) {
     score += 10;
   } else {
     score += 5;
@@ -442,7 +442,7 @@ export function buildMarketIntelligence(
 
   if (
     input.isReported &&
-    !input.isEstimated
+    !input.isQuantityEstimated
   ) {
     evidence.push({
       key: "data-quality",
@@ -451,7 +451,7 @@ export function buildMarketIntelligence(
       status: "strong",
       source: "UN Comtrade",
     });
-  } else if (input.isEstimated) {
+  } else if (input.isQuantityEstimated) {
     evidence.push({
       key: "data-quality",
       label: "Data quality",

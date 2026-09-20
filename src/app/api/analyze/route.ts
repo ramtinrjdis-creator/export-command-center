@@ -89,7 +89,7 @@ type TradeMarket = {
   quantity: number;
   unit: string | null;
   isReported: boolean;
-  isEstimated: boolean;
+  isQuantityEstimated: boolean;
 };
 
 type ComtradeRecord = {
@@ -236,7 +236,7 @@ async function fetchYear(
         item.netWgtUnitAbbr ||
         null,
       isReported: Boolean(item.isReported),
-      isEstimated:
+      isQuantityEstimated:
         Boolean(item.isQtyEstimated) ||
         Number(item.legacyEstimationFlag ?? 0) !== 0,
     }));
@@ -770,8 +770,8 @@ export async function GET(
                 market.demandScore,
               isReported:
                 market.isReported,
-              isEstimated:
-                market.isEstimated,
+              isQuantityEstimated:
+                market.isQuantityEstimated,
               originExportValue,
               originExportStatus:
                 originSignal?.status ??
@@ -789,8 +789,8 @@ export async function GET(
                 market.growthRate,
               isReported:
                 market.isReported,
-              isEstimated:
-                market.isEstimated,
+              isQuantityEstimated:
+                market.isQuantityEstimated,
               originExportValue,
               originExportStatus:
                 originSignal?.status ??

@@ -9,7 +9,7 @@ export type OpportunityInput = {
   demandScore: number;
   growthRate: number | null;
   isReported: boolean;
-  isEstimated: boolean;
+  isQuantityEstimated: boolean;
   originExportValue: number | null;
   originExportStatus:
     | "recorded"
@@ -84,10 +84,10 @@ export function buildOpportunitySignal(
   // ------------------------------------------------------------
   // 3. Data quality
   // ------------------------------------------------------------
-  if (input.isReported && !input.isEstimated) {
+  if (input.isReported && !input.isQuantityEstimated) {
     score += 15;
     reasons.push("Reported trade data is available.");
-  } else if (!input.isEstimated) {
+  } else if (!input.isQuantityEstimated) {
     score += 10;
     reasons.push("Trade data is available without quantity estimation.");
   } else {

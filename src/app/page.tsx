@@ -10,7 +10,7 @@ type Market = {
   unit: string | null;
   demandScore: number;
   isReported: boolean;
-  isEstimated: boolean;
+  isQuantityEstimated: boolean;
   previousImportValue: number | null;
   growthRate: number | null;
   trend: string;
@@ -947,7 +947,7 @@ export default function Home() {
                             }
                             detail={
                               market.quantity > 0
-                                ? market.isEstimated
+                                ? market.isQuantityEstimated
                                   ? "Estimated quantity"
                                   : "Quantity available"
                                 : "Not available"
