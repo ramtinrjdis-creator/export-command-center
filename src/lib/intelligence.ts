@@ -35,6 +35,7 @@ export type MarketIntelligenceInput = {
     | "recorded"
     | "no_record"
     | "rate_limited"
+    | "data_unavailable"
     | "unavailable"
     | null;
   originShare: number | null;
@@ -52,6 +53,7 @@ export type MarketComparison = {
     | "recorded"
     | "no_record"
     | "rate_limited"
+    | "data_unavailable"
     | "unavailable";
   summary: string;
   factors: string[];
@@ -85,7 +87,9 @@ export function compareMarket(
         ? "no_record"
         : input.originExportStatus === "rate_limited"
           ? "rate_limited"
-          : "unavailable";
+          : input.originExportStatus === "data_unavailable"
+            ? "data_unavailable"
+            : "unavailable";
 
   const factors: string[] = [];
 
@@ -121,6 +125,7 @@ export function compareMarket(
       evidence = "strong";
     } else if (
       input.originExportStatus === "rate_limited" ||
+      input.originExportStatus === "data_unavailable" ||
       input.originExportStatus === "unavailable"
     ) {
       evidence = "limited";
@@ -341,11 +346,16 @@ function getNextAction(
     | "recorded"
     | "no_record"
     | "rate_limited"
+    | "data_unavailable"
     | "unavailable"
     | null
 ): string {
   if (originExportStatus === "rate_limited") {
     return "Retry origin-specific trade validation later; do not interpret rate limiting as zero exports.";
+  }
+
+  if (originExportStatus === "data_unavailable") {
+    return "The current Comtrade source has no origin dataset for this reporter and year; use another source before interpreting the market gap.";
   }
 
   if (originExportStatus === "unavailable") {
@@ -501,6 +511,12 @@ export function buildMarketIntelligence(
   ) {
     limitations.push(
       "Origin-specific evidence could not be validated because the data source rate-limited the request."
+    );
+  } else if (
+    input.originExportStatus === "data_unavailable"
+  ) {
+    limitations.push(
+      "The current Comtrade source has no origin dataset for the selected reporter and year."
     );
   } else if (
     input.originExportStatus === "unavailable"

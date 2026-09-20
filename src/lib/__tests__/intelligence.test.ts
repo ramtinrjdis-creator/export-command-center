@@ -43,4 +43,21 @@ describe("compareMarket", () => {
       "No origin-specific export record was found."
     );
   });
+
+  it("distinguishes unavailable origin data from a missing bilateral record", () => {
+    const result = compareMarket({
+      importValue: 1_000_000,
+      previousImportValue: 900_000,
+      growthRate: 5,
+      demandScore: 70,
+      isReported: true,
+      isEstimated: false,
+      originExportValue: null,
+      originExportStatus: "data_unavailable",
+      originShare: null,
+    });
+
+    expect(result.originSignal).toBe("data_unavailable");
+    expect(result.evidence).toBe("limited");
+  });
 });

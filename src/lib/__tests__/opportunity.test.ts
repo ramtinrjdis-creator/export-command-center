@@ -39,6 +39,23 @@ describe("buildOpportunitySignal", () => {
     );
   });
 
+  it("distinguishes unavailable origin data from a missing trade record", () => {
+    const result = buildOpportunitySignal({
+      importValue: 2_000_000,
+      demandScore: 80,
+      growthRate: 5,
+      isReported: true,
+      isEstimated: false,
+      originExportValue: null,
+      originExportStatus: "data_unavailable",
+      originShare: null,
+    });
+
+    expect(result.missingEvidence).toContain(
+      "The current Comtrade source has no origin dataset for the selected reporter and year."
+    );
+  });
+
   it("keeps strongly declining markets in monitor state", () => {
     const result = buildOpportunitySignal({
       importValue: 2_000_000,

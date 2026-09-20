@@ -15,7 +15,13 @@ type Market = {
   growthRate: number | null;
   trend: string;
   originExportValue: number | null;
-  originExportStatus: "recorded" | "no_record" | "rate_limited" | "unavailable" | null;
+  originExportStatus:
+    | "recorded"
+    | "no_record"
+    | "rate_limited"
+    | "data_unavailable"
+    | "unavailable"
+    | null;
   originShare: number | null;
   opportunity: {
     signal:

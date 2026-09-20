@@ -5,6 +5,9 @@ import { buildOpportunitySignal } from "@/lib/opportunity";
 const COMTRADE_BASE =
   "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
 
+const COMTRADE_AVAILABILITY_BASE =
+  "https://comtradeapi.un.org/public/v1/getDA/C/A/HS";
+
 const COMTRADE_TIMEOUT_MS = 10_000;
 
 const COUNTRY_NAMES: Record<number, string> = {
@@ -137,6 +140,10 @@ type BilateralExportResult =
       value: null;
     }
   | {
+      status: "data_unavailable";
+      value: null;
+    }
+  | {
       status: "unavailable";
       value: null;
     };
@@ -233,6 +240,47 @@ async function fetchYear(
         Boolean(item.isQtyEstimated) ||
         Number(item.legacyEstimationFlag ?? 0) !== 0,
     }));
+}
+
+async function fetchOriginDataAvailability(
+  reporterCode: number,
+  year: string
+): Promise<"available" | "unavailable" | "unknown"> {
+  const url = new URL(COMTRADE_AVAILABILITY_BASE);
+
+  url.searchParams.set("reporterCode", String(reporterCode));
+  url.searchParams.set("period", year);
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(COMTRADE_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      return "unknown";
+    }
+
+    const payload: unknown = await response.json();
+
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      !("data" in payload) ||
+      !Array.isArray(payload.data)
+    ) {
+      return "unknown";
+    }
+
+    return payload.data.length > 0
+      ? "available"
+      : "unavailable";
+  } catch {
+    return "unknown";
+  }
 }
 
 async function fetchBilateralExport(
@@ -631,15 +679,40 @@ export async function GET(
         BilateralExportResult
       >();
 
+    let originDataAvailability:
+      | "available"
+      | "unavailable"
+      | "unknown"
+      | null = null;
+
     /*
-     * Origin evidence is requested only after
-     * market screening.
-     *
-     * This is the main protection against unnecessary
-     * bilateral API traffic and rate limiting.
+     * Origin availability is checked once after market
+     * screening. If the source has no dataset for the
+     * selected reporter/year, avoid unnecessary bilateral
+     * requests and never present the gap as zero exports.
      */
     if (originCode !== null) {
+      originDataAvailability =
+        await fetchOriginDataAvailability(
+          originCode,
+          String(currentYear)
+        );
+
       for (const market of screenedMarkets) {
+        if (
+          originDataAvailability ===
+          "unavailable"
+        ) {
+          originExportMap.set(
+            market.countryCode,
+            {
+              status: "data_unavailable",
+              value: null,
+            }
+          );
+          continue;
+        }
+
         const result =
           await fetchBilateralExport(
             hsCode,
@@ -762,9 +835,12 @@ export async function GET(
         screenedMarkets:
           screenedMarkets.length,
         originQueries:
-          originCode !== null
+          originCode !== null &&
+          originDataAvailability !==
+            "unavailable"
             ? screenedMarkets.length
             : 0,
+        originDataAvailability,
         maxOriginCandidates: 8,
       },
 

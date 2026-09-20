@@ -15,6 +15,7 @@ export type OpportunityInput = {
     | "recorded"
     | "no_record"
     | "rate_limited"
+    | "data_unavailable"
     | "unavailable"
     | null;
   originShare: number | null;
@@ -132,6 +133,10 @@ export function buildOpportunitySignal(
   } else if (input.originExportStatus === "rate_limited") {
     missingEvidence.push(
       "Origin-specific trade evidence could not be validated because the data source rate-limited the request."
+    );
+  } else if (input.originExportStatus === "data_unavailable") {
+    missingEvidence.push(
+      "The current Comtrade source has no origin dataset for the selected reporter and year."
     );
   } else if (input.originExportStatus === "unavailable") {
     missingEvidence.push(
