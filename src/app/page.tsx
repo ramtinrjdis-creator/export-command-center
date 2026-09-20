@@ -173,6 +173,7 @@ export default function Home() {
   const [buyerProvider, setBuyerProvider] = useState("");
   const [buyerLoading, setBuyerLoading] = useState(false);
   const [buyerError, setBuyerError] = useState("");
+  const [researchCopied, setResearchCopied] = useState(false);
   const [error, setError] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -210,6 +211,25 @@ export default function Home() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  function getResearchQuery(market: Market) {
+    return `"${product.trim()}" importer buyer "${market.country}" HS ${hsCode.trim()}`;
+  }
+
+  async function copyResearchQuery(market: Market) {
+    const query = getResearchQuery(market);
+
+    try {
+      await navigator.clipboard.writeText(query);
+      setResearchCopied(true);
+
+      window.setTimeout(() => {
+        setResearchCopied(false);
+      }, 2000);
+    } catch {
+      setResearchCopied(false);
     }
   }
 
@@ -711,13 +731,105 @@ export default function Home() {
               )}
 
               {!buyerLoading && buyerError && (
-                <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-                  <p className="text-sm font-semibold text-amber-300">
-                    Buyer discovery unavailable
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    {buyerError}
-                  </p>
+                <div className="mt-6 space-y-4">
+                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+                    <p className="text-sm font-semibold text-amber-300">
+                      Live buyer data unavailable
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      {buyerError}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6">
+                    <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
+                          Free Research Mode
+                        </p>
+
+                        <h4 className="mt-2 text-xl font-bold text-white">
+                          Research buyers without a paid API.
+                        </h4>
+
+                        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                          Use this research brief to investigate real companies manually.
+                          No company is treated as a buyer until its evidence is verified.
+                        </p>
+                      </div>
+
+                      {selectedMarket && selectedMarket.countryCode === 840 && (
+                        <a
+                          href="https://www.importyeti.com/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex shrink-0 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm font-semibold text-blue-300 transition hover:bg-blue-500/20"
+                        >
+                          Open ImportYeti →
+                        </a>
+                      )}
+                    </div>
+
+                    {selectedMarket && (
+                      <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          Research brief
+                        </p>
+
+                        <p className="mt-2 break-words text-sm leading-6 text-slate-200">
+                          {getResearchQuery(selectedMarket)}
+                        </p>
+
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={() => copyResearchQuery(selectedMarket)}
+                            className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+                          >
+                            {researchCopied
+                              ? "Copied ✓"
+                              : "Copy research query"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-xl bg-slate-950/70 p-4">
+                        <p className="text-xs font-semibold text-slate-500">
+                          01 · Find
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Find companies that import or distribute the product in the selected market.
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-950/70 p-4">
+                        <p className="text-xs font-semibold text-slate-500">
+                          02 · Verify
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Verify company identity, product relevance, shipment evidence, and recency.
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-950/70 p-4">
+                        <p className="text-xs font-semibold text-slate-500">
+                          03 · Record
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Only add a company to outreach after its evidence is independently checked.
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedMarket && selectedMarket.countryCode !== 840 && (
+                      <p className="mt-4 text-xs leading-5 text-slate-500">
+                        ImportYeti&apos;s current free plan covers US imports only; this research workflow
+                        remains provider-agnostic for other markets.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 
