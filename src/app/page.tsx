@@ -218,6 +218,12 @@ export default function Home() {
     return `"${product.trim()}" importer buyer "${market.country}" HS ${hsCode.trim()}`;
   }
 
+  function getResearchUrl(market: Market) {
+    return `https://www.google.com/search?q=${encodeURIComponent(
+      getResearchQuery(market)
+    )}`;
+  }
+
   async function copyResearchQuery(market: Market) {
     const query = getResearchQuery(market);
 
@@ -790,6 +796,15 @@ export default function Home() {
                               ? "Copied ✓"
                               : "Copy research query"}
                           </button>
+
+                          <a
+                            href={getResearchUrl(selectedMarket)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2.5 text-sm font-semibold text-blue-300 transition hover:bg-blue-500/20"
+                          >
+                            Open web research →
+                          </a>
                         </div>
                       </div>
                     )}
