@@ -1,6 +1,6 @@
 "use client";
 import { buildMarketSnapshot, compareMarketSnapshots, readSavedMarketSnapshot, saveMarketSnapshot } from "@/lib/monitoring";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState, useSyncExternalStore } from "react";
 
 type EvidenceBreakdownItem = {
   points: number;
@@ -87,6 +87,15 @@ type Market = {
   commercialReadiness?: {
     stage?: string; label?: string; blockers?: string[]; nextStep?: string;
   } | null;
+};
+
+type SavedMarket = {
+  market: Market;
+  product: string;
+  hsCode: string;
+  originCode: string;
+  year: string;
+  savedAt: string;
 };
 
 type Buyer = {
@@ -455,7 +464,6 @@ const [product, setProduct] = useState("Coffee");
   const [screening, setScreening] = useState<AnalysisResponse["screening"] | null>(null);
 
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
-  const [savedMarketKeys, setSavedMarketKeys] = useState<string[]>([]);
   const [workspaceCopied, setWorkspaceCopied] = useState(false);
   const [workspaceExported, setWorkspaceExported] = useState(false);
   const [buyers, setBuyers] = useState<Buyer[]>([]);
@@ -505,38 +513,90 @@ const [product, setProduct] = useState("Coffee");
     }, 40);
   }
 
-  function restoreSavedMarkets() {
-    try {
-      const raw = window.localStorage.getItem("ecc_saved_market_keys");
-      if (!raw) return;
+  const savedMarketsRaw = useSyncExternalStore(
+    (callback) => {
+      if (typeof window === "undefined") return () => {};
 
-      const parsed = JSON.parse(raw);
+      const notify = () => callback();
+      window.addEventListener("storage", notify);
+      window.addEventListener("ecc:saved-markets-change", notify);
 
-      if (Array.isArray(parsed)) {
-        setSavedMarketKeys(
-          parsed.filter((item): item is string => typeof item === "string"),
-        );
+      return () => {
+        window.removeEventListener("storage", notify);
+        window.removeEventListener("ecc:saved-markets-change", notify);
+      };
+    },
+    () => {
+      try {
+        return window.localStorage.getItem("ecc:saved-markets:v2") || "[]";
+      } catch {
+        return "[]";
       }
-    } catch {}
-  }
+    },
+    () => "[]",
+  );
+
+  const savedMarkets = useMemo<SavedMarket[]>(() => {
+    try {
+      const parsed = JSON.parse(savedMarketsRaw);
+
+      if (!Array.isArray(parsed)) return [];
+
+      return parsed
+        .filter(
+          (item): item is SavedMarket =>
+            Boolean(
+              item &&
+              typeof item === "object" &&
+              item.market &&
+              typeof item.product === "string" &&
+              typeof item.hsCode === "string" &&
+              typeof item.originCode === "string" &&
+              typeof item.year === "string",
+            ),
+        )
+        .slice(0, 12);
+    } catch {
+      return [];
+    }
+  }, [savedMarketsRaw]);
 
   function toggleSavedMarket(market: Market) {
     const key = marketKey(market);
 
-    setSavedMarketKeys((current) => {
-      const next = current.includes(key)
-        ? current.filter((item) => item !== key)
-        : [...current, key];
+    const exists = savedMarkets.some(
+      (item) => marketKey(item.market) === key,
+    );
 
-      try {
-        window.localStorage.setItem(
-          "ecc_saved_market_keys",
-          JSON.stringify(next),
-        );
-      } catch {}
+    const next = exists
+      ? savedMarkets.filter((item) => marketKey(item.market) !== key)
+      : [
+          {
+            market,
+            product,
+            hsCode,
+            originCode,
+            year,
+            savedAt: new Date().toISOString(),
+          },
+          ...savedMarkets,
+        ].slice(0, 12);
 
-      return next;
-    });
+    try {
+      window.localStorage.setItem(
+        "ecc:saved-markets:v2",
+        JSON.stringify(next),
+      );
+      window.dispatchEvent(new Event("ecc:saved-markets-change"));
+    } catch {}
+  }
+
+  function openSavedMarket(saved: SavedMarket) {
+    setProduct(saved.product);
+    setHsCode(saved.hsCode);
+    setOriginCode(saved.originCode);
+    setYear(saved.year);
+    focusWorkspace(saved.market);
   }
 
   async function copyResearchPlan() {
@@ -628,8 +688,6 @@ const [product, setProduct] = useState("Coffee");
     setBuyerResearch(null);
 
     try {
-      restoreSavedMarkets();
-
       const params = new URLSearchParams({ hsCode: cleanHs, year, origin: originCode });
       const response = await fetch(`/api/analyze?${params.toString()}`);
       const data = (await response.json()) as AnalysisResponse;
@@ -1177,12 +1235,12 @@ const [product, setProduct] = useState("Coffee");
                     type="button"
                     onClick={() => toggleSavedMarket(selectedMarket)}
                     className={`rounded-xl border px-3 py-2 text-[10px] font-semibold transition ${
-                      savedMarketKeys.includes(marketKey(selectedMarket))
+                      savedMarkets.some((item) => marketKey(item.market) === marketKey(selectedMarket))
                         ? "border-emerald-300/15 bg-emerald-300/[0.06] text-emerald-200"
                         : "border-white/8 bg-white/[0.025] text-white/45 hover:bg-white/[0.05] hover:text-white/70"
                     }`}
                   >
-                    {savedMarketKeys.includes(marketKey(selectedMarket))
+                    {savedMarkets.some((item) => marketKey(item.market) === marketKey(selectedMarket))
                       ? "Saved ✓"
                       : "Save market"}
                   </button>
@@ -1207,6 +1265,58 @@ const [product, setProduct] = useState("Coffee");
             ) : null}
           </div>
 
+          {savedMarkets.length ? (
+            <div className="mt-4 rounded-2xl border border-white/7 bg-white/[0.018] p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/22">
+                    Saved research
+                  </div>
+                  <div className="mt-1 text-xs text-white/32">
+                    Browser-local market snapshots you can reopen without rescanning.
+                  </div>
+                </div>
+                <div className="text-[10px] uppercase tracking-[0.12em] text-white/18">
+                  {savedMarkets.length}/12 saved
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-2">
+                {savedMarkets.map((saved) => (
+                  <div
+                    key={`${marketKey(saved.market)}:${saved.savedAt}`}
+                    className="flex flex-col gap-3 rounded-xl border border-white/7 bg-black/10 p-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openSavedMarket(saved)}
+                      className="min-w-0 text-left transition hover:text-white"
+                    >
+                      <div className="truncate text-sm font-medium text-white/70">
+                        {nameOf(saved.market)}
+                      </div>
+                      <div className="mt-1 text-[10px] text-white/22">
+                        {saved.product || "Product"} · HS {saved.hsCode} · {saved.year}
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleSavedMarket(saved.market)}
+                      className="shrink-0 self-start rounded-lg border border-white/8 bg-white/[0.02] px-2.5 py-1.5 text-[10px] font-semibold text-white/35 transition hover:bg-white/[0.05] hover:text-white/60 sm:self-auto"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 text-[10px] leading-5 text-white/18">
+                Saved research stays in this browser only. It is not server-synced.
+              </div>
+            </div>
+          ) : null}
+
           {selectedMarket ? (
             <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-white/7 bg-white/[0.018] px-4 py-3 text-[10px] uppercase tracking-[0.13em] text-white/25">
               <span>
@@ -1217,7 +1327,7 @@ const [product, setProduct] = useState("Coffee");
               <span>
                 Saved locally:{" "}
                 <span className="text-cyan-200/60">
-                  {savedMarketKeys.length}
+                  {savedMarkets.length}
                 </span>
               </span>
 
@@ -1480,8 +1590,8 @@ const [product, setProduct] = useState("Coffee");
       </div>
 
 
-      {proMode && rankedMarkets[0] && (() => {
-        const market = rankedMarkets[proMarketIndex] ?? rankedMarkets[0];
+      {proMode && (selectedMarket || rankedMarkets[0]) && (() => {
+        const market = selectedMarket ?? rankedMarkets[proMarketIndex] ?? rankedMarkets[0];
         const pack = proPackFor(market, rankedMarkets);
 
         return (
@@ -1546,7 +1656,9 @@ const [product, setProduct] = useState("Coffee");
                       item.market ||
                       `Market ${index + 1}`;
 
-                    const active = index === proMarketIndex;
+                    const active = selectedMarket
+                      ? marketKey(selectedMarket) === marketKey(item)
+                      : index === proMarketIndex;
 
                     return (
                       <button
