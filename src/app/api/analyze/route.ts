@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildMarketIntelligence } from "@/lib/intelligence";
+import { calculateOriginShare } from "@/lib/analysis-math";
 import { scoreMarket } from "@/lib/market-scoring";
 import { buildDecisionProfile } from "@/lib/decision-engine";
 import { buildNextBestResearch } from "@/lib/research-engine";
@@ -13,6 +14,8 @@ import {
 
 const COMTRADE_BASE = "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
 const WORLD_BANK_BASE = "https://api.worldbank.org/v2";
+
+const WORLD_BANK_TIMEOUT_MS = 10_000;
 
 type TradeMarket = {
   countryCode: number;
@@ -232,6 +235,7 @@ async function fetchWorldBankMacro(
         const response = await fetch(url.toString(), {
           headers: { Accept: "application/json" },
           cache: "no-store",
+          signal: AbortSignal.timeout(WORLD_BANK_TIMEOUT_MS),
         });
 
         if (!response.ok) return [];
@@ -276,7 +280,7 @@ async function fetchWorldBankMacro(
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const hsCode = searchParams.get("hsCode")?.trim() || "";
-  const yearParam = searchParams.get("year")?.trim() || "2024";
+  const yearParam = searchParams.get("year")?.trim() || "2025";
   const originParam = searchParams.get("origin")?.trim() || "";
   const year = Number(yearParam);
   const origin = originParam ? Number(originParam) : null;
@@ -390,9 +394,10 @@ export async function GET(request: Request) {
             ? originStatusMap.get(market.countryCode) ?? "data_unavailable"
             : null;
         const originValue = origin !== null ? originValueMap.get(market.countryCode) ?? null : null;
-        const originShare = originValue !== null && market.importValue > 0
-          ? Number(((originValue / market.importValue) * 100).toFixed(2))
-          : null;
+        const originShare = calculateOriginShare(
+          originValue,
+          market.importValue,
+        );
 
         const intelligence = buildMarketIntelligence({
           importValue: market.importValue,

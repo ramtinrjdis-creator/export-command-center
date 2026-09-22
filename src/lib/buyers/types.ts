@@ -28,6 +28,8 @@ export type BuyerProviderMeta = {
   creditsRemaining: number | null;
   requestId: string | null;
   fetchedAt: string;
+  dataUpdatedAt?: string | null;
+  endpoint?: string | null;
 };
 
 export type BuyerProviderResult =

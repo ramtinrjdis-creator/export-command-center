@@ -37,9 +37,13 @@ export function buildDataTrust(input: DataTrustInput): DataTrust {
     input.isReported === false ? "not-reported" :
     input.isReported === true && flagged ? "mixed" : "unknown";
   const coverage: CoverageBand =
-    input.originRequested && input.originStatus === "recorded" ? "complete" :
-    input.originRequested && input.originStatus === "unavailable" ? "limited" :
-    input.originRequested ? "partial" : "partial";
+    !input.originRequested
+      ? "partial"
+      : input.originStatus === "recorded"
+        ? "complete"
+        : input.originStatus === "no_record"
+          ? "partial"
+          : "limited";
   const limitations = [
     `${input.source} market values describe destination-side imports for the requested period.`,
     ...(flagged ? ["At least one source field carries an estimation signal; it is not presented as fully reported data."] : []),

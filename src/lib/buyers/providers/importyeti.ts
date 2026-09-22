@@ -18,8 +18,8 @@ type ImportYetiProductCompany = {
   specialization?: number;
   company_total_shipments?: number;
   company_experience?: number;
-  product_description?: string;
-  company_suppliers?: number;
+  product_description?: string | string[];
+  company_suppliers?: string[] | number;
   total_suppliers?: number;
   weight?: number;
   relevance_score?: number;
@@ -28,28 +28,57 @@ type ImportYetiProductCompany = {
 type ImportYetiResponse = {
   requestCost?: number;
   creditsRemaining?: number;
-  data?: {
+  data?: ImportYetiProductCompany[] | {
     data?: ImportYetiProductCompany[];
     totalCompanies?: number;
   };
 };
 
-function isImportYetiResponse(value: unknown): value is ImportYetiResponse {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
+function getImportYetiRows(value: unknown): ImportYetiProductCompany[] {
+  if (typeof value !== "object" || value === null) return [];
 
   const payload = value as Record<string, unknown>;
   const data = payload.data;
 
-  return (
-    data === undefined ||
-    (
-      typeof data === "object" &&
-      data !== null &&
-      Array.isArray((data as Record<string, unknown>).data)
-    )
-  );
+  if (Array.isArray(data)) {
+    return data as ImportYetiProductCompany[];
+  }
+
+  if (typeof data === "object" && data !== null) {
+    const nested = (data as Record<string, unknown>).data;
+    return Array.isArray(nested)
+      ? (nested as ImportYetiProductCompany[])
+      : [];
+  }
+
+  return [];
+}
+
+function importYetiCompanyUrl(value: string | undefined): string | null {
+  const clean = value?.trim();
+  if (!clean) return null;
+
+  if (/^https?:\/\//i.test(clean)) {
+    return clean;
+  }
+
+  if (clean.startsWith("/")) {
+    return "https://www.importyeti.com" + clean;
+  }
+
+  return "https://www.importyeti.com/" + clean;
+}
+
+function productMatchText(
+  value: string | string[] | undefined
+): string | null {
+  if (Array.isArray(value)) {
+    const items = value.map((item) => item.trim()).filter(Boolean);
+    return items.length ? items.join(", ") : null;
+  }
+
+  const clean = value?.trim();
+  return clean || null;
 }
 
 function normalizeCompanyId(name: string, index: number): string {
@@ -159,23 +188,8 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
 
       const rawPayload: unknown = await response.json();
 
-      if (!isImportYetiResponse(rawPayload)) {
-        return {
-          status: "unavailable",
-          buyers: [],
-          reason: "provider_error",
-          meta: {
-            provider: this.name,
-            requestCost: null,
-            creditsRemaining: null,
-            requestId: response.headers.get("x-request-id"),
-            fetchedAt: new Date().toISOString(),
-          },
-        };
-      }
-
-      const payload = rawPayload;
-      const rows = payload.data?.data ?? [];
+      const payload = rawPayload as ImportYetiResponse;
+      const rows = getImportYetiRows(payload);
 
       const buyers: BuyerRecord[] = rows
         .map((row, index) => {
@@ -191,8 +205,9 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
               : null;
 
           const totalShipments =
-            typeof row.company_total_shipments === "number"
-              ? row.company_total_shipments
+            typeof row.company_total_shipments === "number" &&
+            Number.isFinite(row.company_total_shipments)
+              ? Math.max(0, Math.round(row.company_total_shipments))
               : null;
 
           const relevance =
@@ -219,16 +234,24 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
             {
               id: normalizeCompanyId(companyName, index),
               companyName,
-              companyLink: row.company_link?.trim() || null,
+              companyLink: importYetiCompanyUrl(row.company_link),
               countryCode: 840,
               country: "United States",
               shipmentCount: totalShipments,
               matchingShipments,
               lastShipmentDate: null,
               productMatch:
-                row.product_description?.trim() ||
+                productMatchText(row.product_description) ||
                 productDescription,
-              source: "importyeti",
+              supplierCount:
+                typeof row.total_suppliers === "number"
+                  ? Math.max(0, Math.round(row.total_suppliers))
+                  : typeof row.company_suppliers === "number"
+                    ? Math.max(0, Math.round(row.company_suppliers))
+                    : Array.isArray(row.company_suppliers)
+                      ? row.company_suppliers.length
+                      : null,
+              source: "ImportYeti",
               evidenceStatus: strongEvidence
                 ? "strong"
                 : moderateEvidence
@@ -255,6 +278,7 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
               : null,
           requestId: response.headers.get("x-request-id"),
           fetchedAt: new Date().toISOString(),
+          endpoint: `${BASE_URL}/{product}/companies`,
         },
       };
     } catch {

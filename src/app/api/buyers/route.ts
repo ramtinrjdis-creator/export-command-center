@@ -25,9 +25,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "hsCode must be 2-6 digits." }, { status: 400 });
   }
 
-  if (!Number.isInteger(marketCode) || marketCode < 0) {
+  if (!Number.isInteger(marketCode) || marketCode < 1) {
     return NextResponse.json({ ok: false, error: "market must be a valid country code." }, { status: 400 });
   }
+
+  let providerFallbackReason: string | null = null;
 
   if (isPaidProviderEnabled()) {
     const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 10;
@@ -52,6 +54,10 @@ export async function GET(request: NextRequest) {
         providerMeta: result.meta,
       });
     }
+
+    if (result.status === "unavailable") {
+      providerFallbackReason = result.reason;
+    }
   }
 
   const research = buildBuyerResearch({
@@ -65,6 +71,7 @@ export async function GET(request: NextRequest) {
     ok: true,
     available: false,
     provider: "free-research",
+    providerFallbackReason,
     status: "research_mode",
     hsCode,
     marketCountryCode: marketCode,

@@ -1,6 +1,5 @@
 "use client";
 import { buildMarketSnapshot, compareMarketSnapshots, readSavedMarketSnapshot, saveMarketSnapshot } from "@/lib/monitoring";
-
 import { FormEvent, useMemo, useState } from "react";
 
 type EvidenceBreakdownItem = {
@@ -438,7 +437,7 @@ export default function Home() {
 const [product, setProduct] = useState("Coffee");
   const [hsCode, setHsCode] = useState("0901");
   const [originCode, setOriginCode] = useState("364");
-  const [year, setYear] = useState("2024");
+  const [year, setYear] = useState("2025");
   const [countryOpen, setCountryOpen] = useState(false);
   const [countryQuery, setCountryQuery] = useState("");
 
@@ -503,8 +502,11 @@ const [product, setProduct] = useState("Coffee");
       const response = await fetch(`/api/analyze?${params.toString()}`);
       const data = (await response.json()) as AnalysisResponse;
       if (!response.ok || !data.ok) throw new Error(data.error || "Market scan failed.");
-      setMarkets(data.markets ?? []);
-      const currentSnapshot = buildMarketSnapshot(data.markets ?? []);
+      const nextMarkets = data.markets ?? [];
+      setMarkets(nextMarkets);
+      setSelectedMarket(nextMarkets[0] ?? null);
+
+      const currentSnapshot = buildMarketSnapshot(nextMarkets);
       const previousSnapshot = readSavedMarketSnapshot();
       setMonitoringChange(compareMarketSnapshots(previousSnapshot, currentSnapshot));
       saveMarketSnapshot(currentSnapshot);
@@ -582,7 +584,7 @@ const [product, setProduct] = useState("Coffee");
             <a href="#market-results" className="hover:text-white">Markets</a>
             <a href="#buyers" className="hover:text-white">Buyers</a>
             <a href="#evidence" className="hover:text-white">Evidence</a>
-          <a href="#decision-workspace" className="transition hover:text-white">Workspace</a>
+          <a href="#workspace-tools" className="transition hover:text-white">Workspace</a>
           <a href="#pro" className="transition hover:text-white">Pro</a>
           </nav>
 
@@ -624,7 +626,17 @@ const [product, setProduct] = useState("Coffee");
                 <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/25">Market scanner</div>
                 <div className="mt-1 text-base font-medium text-white/85">No trade jargon required.</div>
               </div>
-              <span className="rounded-full border border-emerald-300/15 bg-emerald-300/[0.05] px-2.5 py-1 text-[9px] uppercase tracking-[0.15em] text-emerald-200/80">Ready</span>
+              <span
+                role="status"
+                aria-live="polite"
+                className={`rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.15em] ${
+                  loading
+                    ? "border-cyan-300/15 bg-cyan-300/[0.05] text-cyan-200/80"
+                    : "border-emerald-300/15 bg-emerald-300/[0.05] text-emerald-200/80"
+                }`}
+              >
+                {loading ? "Analyzing" : "Ready"}
+              </span>
             </div>
 
             <form onSubmit={scan} className="mt-5 space-y-4">
@@ -700,6 +712,36 @@ const [product, setProduct] = useState("Coffee");
               <Stat label="Candidates" value={num(screening.screenedMarkets ?? markets.length)} detail="Passed screen" />
               <Stat label="Origin checks" value={num(screening.originQueries)} detail="Bilateral checks" />
               <Stat label="Origin data" value={screening.originDataAvailability === "available" ? "Partial coverage" : screening.originDataAvailability === "partial" ? "Partial" : screening.originDataAvailability === "unavailable" ? "Unavailable" : screening.originDataAvailability === "not-requested" ? "Not requested" : "Unknown"} detail="Never inferred as zero" />
+            </div>
+          ) : null}
+
+          {searched && !loading ? (
+            <div
+              className={`mt-7 rounded-2xl border px-4 py-3 ${
+                markets.length
+                  ? "border-cyan-300/10 bg-cyan-300/[0.02]"
+                  : "border-amber-300/10 bg-amber-300/[0.025]"
+              }`}
+              aria-live="polite"
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/25">
+                    Scan status
+                  </div>
+                  <div className="mt-1 text-xs text-white/55">
+                    {markets.length
+                      ? `${markets.length} candidate markets loaded. The first market is now your working focus.`
+                      : "No usable market candidates were returned for this scan."}
+                  </div>
+                </div>
+
+                {markets.length ? (
+                  <div className="text-[10px] text-cyan-200/55">
+                    Focus: {nameOf(rankedMarkets[0])}
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -1181,8 +1223,7 @@ const [product, setProduct] = useState("Coffee");
         </div>
       </section>
 
-      <footer className="border-t border-white/[0.07]"><div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-[10px] uppercase tracking-[0.14em] text-white/18 md:flex-row md:items-center md:justify-between md:px-8"><span>Export Command Center · evidence-driven market intelligence</span><span>Validate before you scale</span></div></footer>
-    
+
       {proMode && rankedMarkets[0] && (() => {
         const market = rankedMarkets[proMarketIndex] ?? rankedMarkets[0];
         const pack = proPackFor(market, rankedMarkets);
@@ -1573,6 +1614,13 @@ const [product, setProduct] = useState("Coffee");
           </section>
         );
       })()}
+
+      <footer className="border-t border-white/[0.07]">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-[10px] uppercase tracking-[0.14em] text-white/18 md:flex-row md:items-center md:justify-between md:px-8">
+          <span>Export Command Center · evidence-driven market intelligence</span>
+          <span>Validate before you scale</span>
+        </div>
+      </footer>
 </main>
   );
 }
