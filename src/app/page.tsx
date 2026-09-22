@@ -455,6 +455,9 @@ const [product, setProduct] = useState("Coffee");
   const [screening, setScreening] = useState<AnalysisResponse["screening"] | null>(null);
 
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const [savedMarketKeys, setSavedMarketKeys] = useState<string[]>([]);
+  const [workspaceCopied, setWorkspaceCopied] = useState(false);
+  const [workspaceExported, setWorkspaceExported] = useState(false);
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [buyerLoading, setBuyerLoading] = useState(false);
   const [buyerError, setBuyerError] = useState("");
@@ -480,12 +483,15 @@ const [product, setProduct] = useState("Coffee");
     ? `https://www.google.com/search?q=${encodeURIComponent(researchQuery)}`
     : "#";
 
+  function marketKey(market: Market) {
+    return `${nameOf(market)}:${String(market.countryCode ?? "")}`;
+  }
+
   function focusWorkspace(market: Market) {
-    const targetKey = `${nameOf(market)}:${String(market.countryCode ?? "")}`;
+    const targetKey = marketKey(market);
 
     const index = rankedMarkets.findIndex(
-      (item) =>
-        `${nameOf(item)}:${String(item.countryCode ?? "")}` === targetKey,
+      (item) => marketKey(item) === targetKey,
     );
 
     setSelectedMarket(market);
@@ -497,6 +503,109 @@ const [product, setProduct] = useState("Coffee");
         block: "start",
       });
     }, 40);
+  }
+
+  function restoreSavedMarkets() {
+    try {
+      const raw = window.localStorage.getItem("ecc_saved_market_keys");
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+
+      if (Array.isArray(parsed)) {
+        setSavedMarketKeys(
+          parsed.filter((item): item is string => typeof item === "string"),
+        );
+      }
+    } catch {}
+  }
+
+  function toggleSavedMarket(market: Market) {
+    const key = marketKey(market);
+
+    setSavedMarketKeys((current) => {
+      const next = current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key];
+
+      try {
+        window.localStorage.setItem(
+          "ecc_saved_market_keys",
+          JSON.stringify(next),
+        );
+      } catch {}
+
+      return next;
+    });
+  }
+
+  async function copyResearchPlan() {
+    if (!selectedMarket) return;
+
+    const tasks = selectedMarket.researchPlan ?? [];
+
+    const planText = [
+      "Export Command Center — Research Plan",
+      `Market: ${nameOf(selectedMarket)}`,
+      `Product: ${product || "Product"}`,
+      `HS Code: ${hsCode}`,
+      `Origin: ${selectedCountry.name}`,
+      `Trade year: ${year}`,
+      "",
+      ...tasks.map(
+        (task, index) =>
+          `${index + 1}. ${task.title} [${task.priority}] — ${task.action}`,
+      ),
+    ].join("\n");
+
+    try {
+      await navigator.clipboard?.writeText(planText);
+      setWorkspaceCopied(true);
+      window.setTimeout(() => setWorkspaceCopied(false), 1600);
+    } catch {}
+  }
+
+  function exportSelectedMarket() {
+    if (!selectedMarket) return;
+
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      product,
+      hsCode,
+      origin: {
+        name: selectedCountry.name,
+        code: originCode,
+      },
+      year,
+      market: selectedMarket,
+      researchPlan: selectedMarket.researchPlan ?? [],
+    };
+
+    try {
+      const blob = new Blob(
+        [JSON.stringify(payload, null, 2)],
+        { type: "application/json" },
+      );
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download =
+        `ecc-${nameOf(selectedMarket)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "market"}-decision.json`;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      URL.revokeObjectURL(url);
+
+      setWorkspaceExported(true);
+      window.setTimeout(() => setWorkspaceExported(false), 1600);
+    } catch {}
   }
 
   async function scan(event: FormEvent<HTMLFormElement>) {
@@ -519,6 +628,8 @@ const [product, setProduct] = useState("Coffee");
     setBuyerResearch(null);
 
     try {
+      restoreSavedMarkets();
+
       const params = new URLSearchParams({ hsCode: cleanHs, year, origin: originCode });
       const response = await fetch(`/api/analyze?${params.toString()}`);
       const data = (await response.json()) as AnalysisResponse;
@@ -1048,19 +1159,80 @@ const [product, setProduct] = useState("Coffee");
             </div>
 
             {selectedMarket ? (
-              <div className="rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.04] px-4 py-3">
-                <div className="text-[9px] uppercase tracking-[0.16em] text-cyan-200/45">
-                  Focus market
+              <div className="flex flex-col gap-3 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.04] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-[9px] uppercase tracking-[0.16em] text-cyan-200/45">
+                    Focus market
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-white/80">
+                    {selectedName}
+                  </div>
+                  <div className="mt-1 text-[10px] text-white/25">
+                    Selected from market intelligence
+                  </div>
                 </div>
-                <div className="mt-1 text-sm font-medium text-white/80">
-                  {selectedName}
-                </div>
-                <div className="mt-1 text-[10px] text-white/25">
-                  Selected from market intelligence
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleSavedMarket(selectedMarket)}
+                    className={`rounded-xl border px-3 py-2 text-[10px] font-semibold transition ${
+                      savedMarketKeys.includes(marketKey(selectedMarket))
+                        ? "border-emerald-300/15 bg-emerald-300/[0.06] text-emerald-200"
+                        : "border-white/8 bg-white/[0.025] text-white/45 hover:bg-white/[0.05] hover:text-white/70"
+                    }`}
+                  >
+                    {savedMarketKeys.includes(marketKey(selectedMarket))
+                      ? "Saved ✓"
+                      : "Save market"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={copyResearchPlan}
+                    className="rounded-xl border border-white/8 bg-white/[0.025] px-3 py-2 text-[10px] font-semibold text-white/45 transition hover:bg-white/[0.05] hover:text-white/70"
+                  >
+                    {workspaceCopied ? "Copied ✓" : "Copy plan"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={exportSelectedMarket}
+                    className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] px-3 py-2 text-[10px] font-semibold text-cyan-100/75 transition hover:bg-cyan-300/[0.08]"
+                  >
+                    {workspaceExported ? "Exported ✓" : "Export JSON"}
+                  </button>
                 </div>
               </div>
             ) : null}
           </div>
+
+          {selectedMarket ? (
+            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-white/7 bg-white/[0.018] px-4 py-3 text-[10px] uppercase tracking-[0.13em] text-white/25">
+              <span>
+                Working set:{" "}
+                <span className="text-white/55">{selectedName}</span>
+              </span>
+
+              <span>
+                Saved locally:{" "}
+                <span className="text-cyan-200/60">
+                  {savedMarketKeys.length}
+                </span>
+              </span>
+
+              <span>
+                Research tasks:{" "}
+                <span className="text-white/55">
+                  {selectedMarket.researchPlan?.length ?? 0}
+                </span>
+              </span>
+
+              <span className="text-white/15">
+                Browser-only workspace
+              </span>
+            </div>
+          ) : null}
 
           {!selectedMarket ? (
             <div className="mt-8 rounded-[28px] border border-dashed border-white/8 bg-white/[0.015] p-8 text-center">
@@ -1141,9 +1313,24 @@ const [product, setProduct] = useState("Coffee");
                 </article>
               ))}
 
-              <div className="rounded-2xl border border-dashed border-white/8 bg-black/10 px-4 py-3 text-xs leading-6 text-white/28">
-                Decision rule: resolve the cheapest high-impact uncertainty first.
-                Do not escalate to outreach while a critical validation gap remains.
+              <div className="grid gap-3 rounded-2xl border border-dashed border-white/8 bg-black/10 px-4 py-3 md:grid-cols-[1fr_auto] md:items-center">
+                <div className="text-xs leading-6 text-white/28">
+                  Decision rule: resolve the cheapest high-impact uncertainty first.
+                  Do not escalate to outreach while a critical validation gap remains.
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    document.getElementById("buyers")?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    })
+                  }
+                  className="rounded-xl border border-white/8 bg-white/[0.025] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45 transition hover:bg-white/[0.05] hover:text-white/70"
+                >
+                  Continue to buyers ↘
+                </button>
               </div>
             </div>
           )}
@@ -1151,34 +1338,7 @@ const [product, setProduct] = useState("Coffee");
       </section>
 
       
-      <section id="pro" className="mx-auto mt-16 w-full max-w-7xl px-4 sm:px-6">
-<div className="mb-6 flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.025] p-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-cyan-300/15 bg-cyan-300/8 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">
-              Pro Mode
-            </span>
-            <span className="text-[10px] uppercase tracking-[0.12em] text-white/20">
-              Decision layer
-            </span>
-          </div>
-          <div className="mt-2 text-sm font-medium text-white/70">
-            Turn evidence-backed market signals into a commercial validation pack.
-          </div>
-          <div className="mt-1 text-xs text-white/30">
-            Preview deeper evidence workflows, buyer research, market-access checks, and monitoring without inventing unsupported data.
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setProMode((value) => !value)}
-          className="rounded-xl border border-cyan-300/15 bg-cyan-300/8 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100 transition hover:bg-cyan-300/12"
-        >
-          {proMode ? "Pro Mode On" : "Preview Pro intelligence"}
-        </button>
-      </div>
-      </section>
+      
 
       {/* ECC_FINAL_INTELLIGENCE_V1 */}
       <section id="decision-intelligence" className="scroll-mt-24 border-y border-white/[0.06] bg-[#060b10]">
@@ -1279,12 +1439,56 @@ const [product, setProduct] = useState("Coffee");
       </section>
 
 
+      <section id="pro" className="mx-auto mt-16 w-full max-w-7xl px-4 sm:px-6">
+<div className="mb-6 flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.025] p-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-cyan-300/15 bg-cyan-300/8 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">
+              Pro Mode
+            </span>
+            <span className="text-[10px] uppercase tracking-[0.12em] text-white/20">
+              Decision layer
+            </span>
+          </div>
+          <div className="mt-2 text-sm font-medium text-white/70">
+            Turn evidence-backed market signals into a commercial validation pack.
+          </div>
+          <div className="mt-1 text-xs text-white/30">
+            Preview deeper evidence workflows, buyer research, market-access checks, and monitoring without inventing unsupported data.
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const next = !proMode;
+            setProMode(next);
+
+            if (next) {
+              window.setTimeout(() => {
+                document.getElementById("pro-pack")?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }, 70);
+            }
+          }}
+          className="rounded-xl border border-cyan-300/15 bg-cyan-300/8 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100 transition hover:bg-cyan-300/12"
+        >
+          {proMode ? "Pro Mode On" : "Preview Pro intelligence"}
+        </button>
+      </div>
+
+
       {proMode && rankedMarkets[0] && (() => {
         const market = rankedMarkets[proMarketIndex] ?? rankedMarkets[0];
         const pack = proPackFor(market, rankedMarkets);
 
         return (
-          <section className="mb-10 rounded-3xl border border-cyan-300/12 bg-cyan-300/[0.025] p-5 md:p-6">
+          <section
+            id="pro-pack"
+            className="mb-10 scroll-mt-24 rounded-3xl border border-cyan-300/12 bg-cyan-300/[0.025] p-5 md:p-6"
+          >
             <div className="flex flex-col gap-4 border-b border-white/7 pb-5 md:flex-row md:items-start md:justify-between">
               <div>
                 <div className="flex items-center gap-2">
@@ -1292,7 +1496,7 @@ const [product, setProduct] = useState("Coffee");
                     PRO DECISION PACK
                   </span>
                   <span className="text-[9px] uppercase tracking-[0.14em] text-white/20">
-                    Highest-ranked market
+                    Decision focus
                   </span>
                 </div>
 
@@ -1348,7 +1552,10 @@ const [product, setProduct] = useState("Coffee");
                       <button
                         key={`${name}-${index}`}
                         type="button"
-                        onClick={() => setProMarketIndex(index)}
+                        onClick={() => {
+                          setProMarketIndex(index);
+                          setSelectedMarket(item);
+                        }}
                         className={`rounded-xl border px-3 py-2 text-[10px] font-semibold transition ${
                           active
                             ? "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
@@ -1669,6 +1876,10 @@ const [product, setProduct] = useState("Coffee");
           </section>
         );
       })()}
+      </section>
+
+
+
 
       <footer className="border-t border-white/[0.07]">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-[10px] uppercase tracking-[0.14em] text-white/18 md:flex-row md:items-center md:justify-between md:px-8">
