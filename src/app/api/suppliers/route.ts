@@ -112,7 +112,11 @@ async function fetchWorldImportValue(
   const value =
     world?.primaryValue == null ? null : Number(world.primaryValue);
 
-  return Number.isFinite(value) && value > 0 ? value : null;
+  if (value == null || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return value;
 }
 
 export async function GET(request: Request) {
