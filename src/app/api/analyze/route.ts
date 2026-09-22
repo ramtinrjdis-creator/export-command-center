@@ -15,6 +15,7 @@ import {
 const COMTRADE_BASE = "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
 const WORLD_BANK_BASE = "https://api.worldbank.org/v2";
 
+const COMTRADE_TIMEOUT_MS = 12_000;
 const WORLD_BANK_TIMEOUT_MS = 10_000;
 
 type TradeMarket = {
@@ -85,6 +86,7 @@ async function fetchYear(
   const response = await fetch(url.toString(), {
     headers: { Accept: "application/json" },
     cache: "no-store",
+    signal: AbortSignal.timeout(COMTRADE_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -150,6 +152,7 @@ async function fetchOriginImports(
   const response = await fetch(url.toString(), {
     headers: { Accept: "application/json" },
     cache: "no-store",
+    signal: AbortSignal.timeout(COMTRADE_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -745,12 +748,11 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("Trade analysis error:", error);
     return NextResponse.json(
-        {
-          ok: false,
-          error: "Unable to retrieve trade data.",
-          details: error instanceof Error ? error.message : String(error),
-        },
-        { status: 502 },
-      );
+      {
+        ok: false,
+        error: "Unable to retrieve trade data.",
+      },
+      { status: 502 },
+    );
   }
 }
