@@ -8,6 +8,7 @@ import { buildNextBestResearch } from "@/lib/research-engine";
 import { buildDataTrust } from "@/lib/trust-layer";
 import { buildMarketAccess } from "@/lib/market-access";
 import { buildCommercialReadiness } from "@/lib/commercial-readiness";
+import { buildCommercialEvidence } from "@/lib/commercial-evidence";
 import {
   buildCompetitionContext,
   buildMarketAccessContext,
@@ -274,6 +275,8 @@ async function fetchWorldBankMacro(
 }
 
 export async function GET(request: Request) {
+  const requestId = crypto.randomUUID();
+  const startedAt = performance.now();
   const { searchParams } = new URL(request.url);
   const hsCode = searchParams.get("hsCode")?.trim() || "";
   const yearParam = searchParams.get("year")?.trim() || "2025";
@@ -628,6 +631,14 @@ export async function GET(request: Request) {
                 : "not-connected",
         });
 
+        const commercialEvidence = buildCommercialEvidence({
+          evidenceScore: intelligence.evidenceScore,
+          originStatus,
+          competitionStatus: competition.status,
+          buyerStatus: "unavailable",
+          marketAccessStatus: marketAccess.status,
+        });
+
         const enrichedMarket = {
           ...market,
           previousImportValue: previousValue,
@@ -668,6 +679,7 @@ export async function GET(request: Request) {
           dataTrust,
           marketAccess,
           commercialReadiness,
+          commercialEvidence,
           competition,
         };
 
@@ -696,6 +708,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: true,
       meta: {
+        requestId,
+        durationMs: Math.round(performance.now() - startedAt),
         source: "UN Comtrade Preview API",
         period: year,
         retrievedAt: fetchedAt,
@@ -755,6 +769,8 @@ export async function GET(request: Request) {
       return NextResponse.json(
         {
           ok: false,
+          requestId,
+          durationMs: Math.round(performance.now() - startedAt),
           error:
             "The trade data source is temporarily rate-limited. Please retry shortly.",
           code: "upstream_rate_limited",
@@ -783,6 +799,8 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         ok: false,
+        requestId,
+        durationMs: Math.round(performance.now() - startedAt),
         error: "Unable to retrieve trade data.",
       },
       { status: 502 },

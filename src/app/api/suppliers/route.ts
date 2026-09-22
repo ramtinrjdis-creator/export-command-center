@@ -6,10 +6,85 @@ import {
 import {
   buildSupplierLandscape,
   type SupplierInput,
+  type SupplierLandscape,
 } from "@/lib/providers/supplier-landscape";
 
 const COMTRADE_BASE =
   "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
+
+const SUPPLIER_CACHE_TTL_MS = 60_000;
+const SUPPLIER_CACHE_MAX_ENTRIES = 100;
+
+type SupplierCacheEntry = {
+  expiresAt: number;
+  landscape: SupplierLandscape;
+  fetchedAt: string;
+};
+
+const supplierCache = new Map<string, SupplierCacheEntry>();
+const supplierInflight = new Map<
+  string,
+  Promise<{ landscape: SupplierLandscape; fetchedAt: string }>
+>();
+
+function supplierCacheKey(input: {
+  hsCode: string;
+  market: number;
+  origin: number | null;
+  year: number;
+}) {
+  return [
+    input.hsCode,
+    input.market,
+    input.origin ?? "none",
+    input.year,
+  ].join(":");
+}
+
+function readSupplierCache(key: string) {
+  const entry = supplierCache.get(key);
+
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    supplierCache.delete(key);
+    return null;
+  }
+
+  return entry;
+}
+
+function writeSupplierCache(
+  key: string,
+  landscape: SupplierLandscape,
+  fetchedAt: string,
+) {
+  const now = Date.now();
+
+  for (const [entryKey, entry] of supplierCache.entries()) {
+    if (entry.expiresAt <= now) {
+      supplierCache.delete(entryKey);
+    }
+  }
+
+  while (supplierCache.size >= SUPPLIER_CACHE_MAX_ENTRIES) {
+    const oldestKey = supplierCache.keys().next().value;
+
+    if (typeof oldestKey !== "string") {
+      break;
+    }
+
+    supplierCache.delete(oldestKey);
+  }
+
+  supplierCache.set(key, {
+    expiresAt: now + SUPPLIER_CACHE_TTL_MS,
+    landscape,
+    fetchedAt,
+  });
+}
 
 type ComtradeSupplierRecord = {
   partnerCode?: number | string;
@@ -165,15 +240,80 @@ export async function GET(request: Request) {
 
   const safeLimit =
     Number.isInteger(limit) && limit > 0 ? Math.min(limit, 25) : 12;
-  const fetchedAt = new Date().toISOString();
 
-  try {
+  const requestId = crypto.randomUUID();
+  const startedAt = performance.now();
+
+  const cacheKey = supplierCacheKey({
+    hsCode,
+    market,
+    origin,
+    year,
+  });
+
+  const cached = readSupplierCache(cacheKey);
+
+  if (cached) {
+    return NextResponse.json(
+      {
+        ok: true,
+        requestId,
+        durationMs: Math.round(performance.now() - startedAt),
+        cache: "hit",
+        market: { code: market, name: marketName || null },
+        source: "UN Comtrade Preview API",
+        fetchedAt: cached.fetchedAt,
+        cacheTtlSeconds: SUPPLIER_CACHE_TTL_MS / 1000,
+        supplierLandscape: {
+          ...cached.landscape,
+          suppliers: cached.landscape.suppliers.slice(0, safeLimit),
+        },
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=30",
+        },
+      },
+    );
+  }
+
+  const existingRequest = supplierInflight.get(cacheKey);
+
+  if (existingRequest) {
+    const shared = await existingRequest;
+
+    return NextResponse.json(
+      {
+        ok: true,
+        requestId,
+        durationMs: Math.round(performance.now() - startedAt),
+        cache: "inflight-shared",
+        market: { code: market, name: marketName || null },
+        source: "UN Comtrade Preview API",
+        fetchedAt: shared.fetchedAt,
+        cacheTtlSeconds: SUPPLIER_CACHE_TTL_MS / 1000,
+        supplierLandscape: {
+          ...shared.landscape,
+          suppliers: shared.landscape.suppliers.slice(0, safeLimit),
+        },
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=30",
+        },
+      },
+    );
+  }
+
+  const requestPromise = (async () => {
+    const fetchedAt = new Date().toISOString();
+
     const [supplierInputs, totalImportValue] = await Promise.all([
       fetchSupplierRecords(hsCode, year, market),
       fetchWorldImportValue(hsCode, year, market),
     ]);
 
-    const supplierLandscape = buildSupplierLandscape({
+    const landscape = buildSupplierLandscape({
       destinationCode: market,
       hsCode,
       year,
@@ -182,16 +322,44 @@ export async function GET(request: Request) {
       originCode: origin,
     });
 
-    return NextResponse.json({
-      ok: true,
-      market: { code: market, name: marketName || null },
-      source: "UN Comtrade Preview API",
+    return {
+      landscape,
       fetchedAt,
-      supplierLandscape: {
-        ...supplierLandscape,
-        suppliers: supplierLandscape.suppliers.slice(0, safeLimit),
+    };
+  })();
+
+  supplierInflight.set(cacheKey, requestPromise);
+
+  try {
+    const shared = await requestPromise;
+
+    writeSupplierCache(
+      cacheKey,
+      shared.landscape,
+      shared.fetchedAt,
+    );
+
+    return NextResponse.json(
+      {
+        ok: true,
+        requestId,
+        durationMs: Math.round(performance.now() - startedAt),
+        cache: "miss",
+        market: { code: market, name: marketName || null },
+        source: "UN Comtrade Preview API",
+        fetchedAt: shared.fetchedAt,
+        cacheTtlSeconds: SUPPLIER_CACHE_TTL_MS / 1000,
+        supplierLandscape: {
+          ...shared.landscape,
+          suppliers: shared.landscape.suppliers.slice(0, safeLimit),
+        },
       },
-    });
+      {
+        headers: {
+          "Cache-Control": "private, max-age=30",
+        },
+      },
+    );
   } catch (error) {
     if (error instanceof ComtradeRateLimitError) {
       const retryAfterSeconds =
@@ -226,10 +394,14 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         ok: false,
+        requestId,
+        durationMs: Math.round(performance.now() - startedAt),
         error: "Unable to retrieve supplier landscape data.",
         retryable: true,
       },
       { status: 502 },
     );
+  } finally {
+    supplierInflight.delete(cacheKey);
   }
 }
