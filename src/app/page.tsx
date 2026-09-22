@@ -695,9 +695,9 @@ const [product, setProduct] = useState("Coffee");
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#05080d] text-white selection:bg-cyan-300/20 selection:text-cyan-100 ecc-v7">
-      
 
-      
+
+
 
 
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_12%_0%,rgba(34,211,238,.1),transparent_30%),radial-gradient(circle_at_90%_12%,rgba(16,185,129,.075),transparent_26%)]" />
@@ -1337,8 +1337,8 @@ const [product, setProduct] = useState("Coffee");
         </div>
       </section>
 
-      
-      
+
+
 
       {/* ECC_FINAL_INTELLIGENCE_V1 */}
       <section id="decision-intelligence" className="scroll-mt-24 border-y border-white/[0.06] bg-[#060b10]">
