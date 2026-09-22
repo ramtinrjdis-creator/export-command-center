@@ -87,6 +87,19 @@ type Market = {
   commercialReadiness?: {
     stage?: string; label?: string; blockers?: string[]; nextStep?: string;
   } | null;
+  commercialEvidence?: {
+    status?: "supported" | "partial" | "blocked";
+    coverageScore?: number | null;
+    layers?: {
+      market?: string;
+      origin?: string;
+      competition?: string;
+      buyers?: string;
+      marketAccess?: string;
+    };
+    blockers?: string[];
+    nextDecision?: string;
+  } | null;
 };
 
 type SavedMarket = {
@@ -878,6 +891,40 @@ const [product, setProduct] = useState("Coffee");
     Boolean(focusMarket) &&
     Boolean(supplierLandscape) &&
     supplierMarketKey === marketKey(focusMarket as Market);
+
+  const commercialEvidence =
+    focusMarket?.commercialEvidence ?? null;
+
+  const commercialCoverage =
+    commercialEvidence?.coverageScore == null
+      ? null
+      : Math.round(commercialEvidence.coverageScore);
+
+  const commercialBlockers =
+    commercialEvidence?.blockers ?? [];
+
+  const buyerLayerLabel =
+    buyers.length > 0
+      ? "Provider-backed results"
+      : buyerResearch
+        ? "Free research mode"
+        : "Not checked";
+
+  const supplierLayerLabel =
+    supplierLoadedForFocus
+      ? `${supplierLandscape?.suppliers?.length ?? 0} supplier markets`
+      : "On-demand";
+
+  const commercialNextDecision =
+    commercialEvidence?.nextDecision ||
+    focusMarket?.decision?.nextAction ||
+    focusMarket?.commercialReadiness?.nextStep ||
+    "Continue validation before commercial scaling.";
+
+  const v7PlanLabel =
+    proMode
+      ? "Pro preview"
+      : "Free research";
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#05080d] text-white selection:bg-cyan-300/20 selection:text-cyan-100 ecc-v7">
@@ -1795,7 +1842,462 @@ const [product, setProduct] = useState("Coffee");
       </section>
 
 
-      <section id="pro" className="mx-auto mt-16 w-full max-w-7xl px-4 sm:px-6">
+
+      <section
+        id="commercial-command-center"
+        className="scroll-mt-24 border-y border-white/[0.07] bg-[#05090e]"
+      >
+        <div className="mx-auto max-w-7xl px-5 py-14 md:px-8 md:py-18">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">
+                04 / Commercial command center
+              </div>
+
+              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white md:text-4xl">
+                From market evidence to a controlled sales decision.
+              </h2>
+
+              <p className="mt-3 max-w-3xl text-sm leading-7 text-white/38">
+                ECC separates destination demand from origin fit, buyer evidence,
+                supplier competition and market-access verification.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/35">
+                {v7PlanLabel}
+              </span>
+
+              <span className="rounded-full border border-cyan-300/12 bg-cyan-300/[0.04] px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-cyan-100/55">
+                Evidence first
+              </span>
+            </div>
+          </div>
+
+          {!focusMarket ? (
+            <div className="mt-8 rounded-[26px] border border-white/8 bg-white/[0.02] p-6">
+              <div className="text-sm font-medium text-white/70">
+                Run a market scan to activate the commercial workspace.
+              </div>
+
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-white/30">
+                The workspace becomes useful once ECC has a real market result
+                to validate.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <article className="rounded-[24px] border border-white/8 bg-white/[0.025] p-5">
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/22">
+                    Commercial coverage
+                  </div>
+
+                  <div className="mt-3 flex items-end gap-2">
+                    <div className="text-3xl font-semibold text-white/85">
+                      {commercialCoverage == null ? "—" : commercialCoverage}
+                    </div>
+
+                    <div className="pb-1 text-[10px] text-white/22">
+                      /100
+                    </div>
+                  </div>
+
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/6">
+                    <div
+                      className="h-full rounded-full bg-cyan-300/55"
+                      style={{
+                        width: `${Math.max(
+                          0,
+                          Math.min(100, commercialCoverage ?? 0)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="mt-3 text-[10px] leading-5 text-white/28">
+                    Evidence coverage, not market attractiveness.
+                  </div>
+                </article>
+
+                <article className="rounded-[24px] border border-white/8 bg-white/[0.025] p-5">
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/22">
+                    Origin fit
+                  </div>
+
+                  <div className="mt-3 text-lg font-semibold text-white/80">
+                    {focusMarket.originExportStatus === "recorded"
+                      ? "Recorded"
+                      : focusMarket.originExportStatus === "no_record"
+                        ? "No bilateral record"
+                        : "Unverified"}
+                  </div>
+
+                  <p className="mt-2 text-xs leading-5 text-white/30">
+                    Missing origin evidence is not treated as zero trade.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      document.getElementById("evidence")?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      })
+                    }
+                    className="mt-4 rounded-xl border border-white/8 bg-white/[0.025] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40 transition hover:bg-white/[0.05] hover:text-white/65"
+                  >
+                    Inspect evidence
+                  </button>
+                </article>
+
+                <article className="rounded-[24px] border border-white/8 bg-white/[0.025] p-5">
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/22">
+                    Buyer layer
+                  </div>
+
+                  <div className="mt-3 text-lg font-semibold text-white/80">
+                    {buyerLayerLabel}
+                  </div>
+
+                  <div className="mt-2 text-xs leading-5 text-white/30">
+                    Verified company records require a connected provider.
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void investigate(focusMarket)
+                    }
+                    className="mt-4 rounded-xl border border-cyan-300/12 bg-cyan-300/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/55 transition hover:bg-cyan-300/[0.08] hover:text-cyan-100/75"
+                  >
+                    Run buyer research
+                  </button>
+                </article>
+
+                <article className="rounded-[24px] border border-white/8 bg-white/[0.025] p-5">
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/22">
+                    Competition
+                  </div>
+
+                  <div className="mt-3 text-lg font-semibold text-white/80">
+                    {supplierLayerLabel}
+                  </div>
+
+                  <div className="mt-2 text-xs leading-5 text-white/30">
+                    Supplier evidence loads on demand to protect upstream rate limits.
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void loadSupplierLandscape(focusMarket)
+                    }
+                    disabled={supplierLoading}
+                    className="mt-4 rounded-xl border border-white/8 bg-white/[0.025] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40 transition hover:bg-white/[0.05] hover:text-white/65 disabled:opacity-40"
+                  >
+                    {supplierLoading
+                      ? "Loading..."
+                      : "Load competition"}
+                  </button>
+                </article>
+              </div>
+
+              <div className="mt-5 grid gap-5 lg:grid-cols-[1.1fr_.9fr]">
+                <article className="rounded-[26px] border border-cyan-300/10 bg-cyan-300/[0.025] p-5 md:p-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">
+                        Current commercial decision
+                      </div>
+
+                      <h3 className="mt-2 text-xl font-semibold text-white/85">
+                        {focusMarket.decision?.decisionState ||
+                          focusMarket.commercialReadiness?.label ||
+                          "Validation candidate"}
+                      </h3>
+                    </div>
+
+                    <Badge
+                      tone={
+                        commercialCoverage != null &&
+                        commercialCoverage >= 75
+                          ? "emerald"
+                          : commercialCoverage != null &&
+                              commercialCoverage >= 50
+                            ? "cyan"
+                            : "amber"
+                      }
+                    >
+                      {commercialCoverage == null
+                        ? "Evidence unresolved"
+                        : commercialCoverage >= 75
+                          ? "Strong coverage"
+                          : commercialCoverage >= 50
+                            ? "Partial coverage"
+                            : "Limited coverage"}
+                    </Badge>
+                  </div>
+
+                  <p className="mt-4 max-w-3xl text-sm leading-7 text-white/42">
+                    {commercialNextDecision}
+                  </p>
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                      <div className="text-[9px] uppercase tracking-[0.14em] text-white/20">
+                        Priority
+                      </div>
+
+                      <div className="mt-2 text-2xl font-semibold text-white/80">
+                        {focusMarket.decision?.priority ?? "—"}
+                        <span className="ml-1 text-xs text-white/20">
+                          /100
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                      <div className="text-[9px] uppercase tracking-[0.14em] text-white/20">
+                        Confidence
+                      </div>
+
+                      <div className="mt-2 text-2xl font-semibold text-white/80">
+                        {focusMarket.decision?.confidence ?? "—"}
+                        <span className="ml-2 text-xs text-cyan-200/45">
+                          {focusMarket.decision?.confidenceLabel || ""}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        document
+                          .getElementById("decision-workspace")
+                          ?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          })
+                      }
+                      className="rounded-xl bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#061016] transition hover:bg-cyan-50"
+                    >
+                      Open decision workspace
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        document
+                          .getElementById("buyers")
+                          ?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          })
+                      }
+                      className="rounded-xl border border-white/8 bg-white/[0.025] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45 transition hover:bg-white/[0.05] hover:text-white/70"
+                    >
+                      Continue to buyers
+                    </button>
+                  </div>
+                </article>
+
+                <article className="rounded-[26px] border border-white/8 bg-white/[0.02] p-5 md:p-6">
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/22">
+                    Evidence gap queue
+                  </div>
+
+                  <div className="mt-4 space-y-2.5">
+                    {commercialBlockers.length ? (
+                      commercialBlockers.slice(0, 5).map((item, index) => (
+                        <div
+                          key={`${item}-${index}`}
+                          className="flex gap-3 rounded-xl border border-white/6 bg-black/10 p-3"
+                        >
+                          <span className="text-[10px] font-semibold text-amber-200/60">
+                            0{index + 1}
+                          </span>
+
+                          <span className="text-xs leading-5 text-white/42">
+                            {item}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-emerald-300/10 bg-emerald-300/[0.025] p-4 text-xs leading-5 text-emerald-100/55">
+                        No commercial blocker was returned by the current evidence graph.
+                      </div>
+                    )}
+                  </div>
+                </article>
+              </div>
+
+              <div className="mt-5 rounded-[26px] border border-white/8 bg-white/[0.02] p-5 md:p-6">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/22">
+                      Validation pipeline
+                    </div>
+
+                    <h3 className="mt-2 text-lg font-semibold text-white/75">
+                      What ECC knows before outreach.
+                    </h3>
+                  </div>
+
+                  <div className="text-[10px] uppercase tracking-[0.13em] text-white/18">
+                    No evidence = no claim
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  {[
+                    {
+                      label: "Market demand",
+                      state:
+                        commercialEvidence?.layers?.market ||
+                        "unavailable",
+                    },
+                    {
+                      label: "Origin fit",
+                      state:
+                        commercialEvidence?.layers?.origin ||
+                        "unavailable",
+                    },
+                    {
+                      label: "Competition",
+                      state:
+                        commercialEvidence?.layers?.competition ||
+                        "not-checked",
+                    },
+                    {
+                      label: "Buyers",
+                      state:
+                        commercialEvidence?.layers?.buyers ||
+                        "not-checked",
+                    },
+                    {
+                      label: "Market access",
+                      state:
+                        commercialEvidence?.layers?.marketAccess ||
+                        "not-checked",
+                    },
+                  ].map((item) => {
+                    const positive =
+                      item.state === "strong" ||
+                      item.state === "moderate";
+
+                    return (
+                      <div
+                        key={item.label}
+                        className="rounded-2xl border border-white/6 bg-black/10 p-4"
+                      >
+                        <div className="text-[9px] uppercase tracking-[0.13em] text-white/20">
+                          {item.label}
+                        </div>
+
+                        <div
+                          className={`mt-3 text-sm font-semibold ${
+                            positive
+                              ? "text-emerald-200/70"
+                              : "text-amber-100/55"
+                          }`}
+                        >
+                          {item.state}
+                        </div>
+
+                        <div className="mt-2 text-[10px] leading-5 text-white/22">
+                          Source-backed status only.
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-[26px] border border-cyan-300/10 bg-cyan-300/[0.018] p-5 md:p-6">
+                <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+                  <div>
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">
+                      Pro value ladder
+                    </div>
+
+                    <h3 className="mt-2 text-xl font-semibold text-white/82">
+                      The product is not selling a bigger dashboard.
+                      It is selling deeper commercial evidence.
+                    </h3>
+
+                    <p className="mt-2 max-w-3xl text-xs leading-6 text-white/30">
+                      Free provides credible market discovery. Pro is designed
+                      to unlock buyer intelligence, deeper competition evidence,
+                      commercial decision packs and market-access verification
+                      when real providers are connected.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setProMode((value) => !value)}
+                    className="rounded-2xl bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.13em] text-[#061016] transition hover:bg-cyan-50"
+                  >
+                    {proMode
+                      ? "Close Pro preview"
+                      : "Open Pro preview"}
+                  </button>
+                </div>
+
+                {proMode ? (
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      {
+                        title: "Buyer intelligence",
+                        state:
+                          buyers.length
+                            ? "Provider-backed"
+                            : "Provider required",
+                      },
+                      {
+                        title: "Supplier landscape",
+                        state:
+                          supplierLoadedForFocus
+                            ? "Loaded"
+                            : "Available on demand",
+                      },
+                      {
+                        title: "Decision pack",
+                        state: "Available",
+                      },
+                      {
+                        title: "Market access",
+                        state:
+                          focusMarket.marketAccess?.status ||
+                          "Verification required",
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.title}
+                        className="rounded-2xl border border-white/7 bg-black/15 p-4"
+                      >
+                        <div className="text-xs font-medium text-white/65">
+                          {item.title}
+                        </div>
+
+                        <div className="mt-2 text-[10px] leading-5 text-white/30">
+                          {item.state}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+<section id="pro" className="mx-auto mt-16 w-full max-w-7xl px-4 sm:px-6">
 <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.025] p-4 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-2">
