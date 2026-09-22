@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   ComtradeRateLimitError,
@@ -6,85 +7,14 @@ import {
 import {
   buildSupplierLandscape,
   type SupplierInput,
-  type SupplierLandscape,
 } from "@/lib/providers/supplier-landscape";
+
+export const dynamic = "force-dynamic";
 
 const COMTRADE_BASE =
   "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
 
-const SUPPLIER_CACHE_TTL_MS = 60_000;
-const SUPPLIER_CACHE_MAX_ENTRIES = 100;
-
-type SupplierCacheEntry = {
-  expiresAt: number;
-  landscape: SupplierLandscape;
-  fetchedAt: string;
-};
-
-const supplierCache = new Map<string, SupplierCacheEntry>();
-const supplierInflight = new Map<
-  string,
-  Promise<{ landscape: SupplierLandscape; fetchedAt: string }>
->();
-
-function supplierCacheKey(input: {
-  hsCode: string;
-  market: number;
-  origin: number | null;
-  year: number;
-}) {
-  return [
-    input.hsCode,
-    input.market,
-    input.origin ?? "none",
-    input.year,
-  ].join(":");
-}
-
-function readSupplierCache(key: string) {
-  const entry = supplierCache.get(key);
-
-  if (!entry) {
-    return null;
-  }
-
-  if (entry.expiresAt <= Date.now()) {
-    supplierCache.delete(key);
-    return null;
-  }
-
-  return entry;
-}
-
-function writeSupplierCache(
-  key: string,
-  landscape: SupplierLandscape,
-  fetchedAt: string,
-) {
-  const now = Date.now();
-
-  for (const [entryKey, entry] of supplierCache.entries()) {
-    if (entry.expiresAt <= now) {
-      supplierCache.delete(entryKey);
-    }
-  }
-
-  while (supplierCache.size >= SUPPLIER_CACHE_MAX_ENTRIES) {
-    const oldestKey = supplierCache.keys().next().value;
-
-    if (typeof oldestKey !== "string") {
-      break;
-    }
-
-    supplierCache.delete(oldestKey);
-  }
-
-  supplierCache.set(key, {
-    expiresAt: now + SUPPLIER_CACHE_TTL_MS,
-    landscape,
-    fetchedAt,
-  });
-}
+const CACHE_TTL_MS = 60 * 1000;
 
 type ComtradeSupplierRecord = {
   partnerCode?: number | string;
@@ -94,7 +24,40 @@ type ComtradeSupplierRecord = {
   primaryValue?: number | string | null;
 };
 
-type ComtradeResponse = { data?: unknown[] };
+type ComtradeResponse = {
+  data?: unknown[];
+};
+
+type SupplierQuery = {
+  hsCode: string;
+  market: number;
+  marketName: string;
+  origin: number | null;
+  year: number;
+  limit: number;
+};
+
+type SupplierPayload = {
+  supplierLandscape: ReturnType<
+    typeof buildSupplierLandscape
+  >;
+  fetchedAt: string;
+};
+
+type CacheEntry = {
+  expiresAt: number;
+  payload: SupplierPayload;
+};
+
+const responseCache = new Map<
+  string,
+  CacheEntry
+>();
+
+const inFlight = new Map<
+  string,
+  Promise<SupplierPayload>
+>();
 
 function buildComtradeUrl(input: {
   hsCode: string;
@@ -103,21 +66,185 @@ function buildComtradeUrl(input: {
   partnerCode?: number;
 }) {
   const url = new URL(COMTRADE_BASE);
-  url.searchParams.set("cmdCode", input.hsCode);
-  url.searchParams.set("flowCode", "M");
-  url.searchParams.set("reporterCode", String(input.reporterCode));
-  url.searchParams.set("partner2Code", "0");
-  url.searchParams.set("period", String(input.year));
-  url.searchParams.set("motCode", "0");
-  url.searchParams.set("customsCode", "C00");
-  url.searchParams.set("maxRecords", "500");
-  url.searchParams.set("includeDesc", "true");
 
-  if (input.partnerCode !== undefined) {
-    url.searchParams.set("partnerCode", String(input.partnerCode));
+  url.searchParams.set(
+    "cmdCode",
+    input.hsCode,
+  );
+
+  url.searchParams.set(
+    "flowCode",
+    "M",
+  );
+
+  url.searchParams.set(
+    "reporterCode",
+    String(input.reporterCode),
+  );
+
+  url.searchParams.set(
+    "partner2Code",
+    "0",
+  );
+
+  url.searchParams.set(
+    "period",
+    String(input.year),
+  );
+
+  url.searchParams.set(
+    "motCode",
+    "0",
+  );
+
+  url.searchParams.set(
+    "customsCode",
+    "C00",
+  );
+
+  url.searchParams.set(
+    "maxRecords",
+    "500",
+  );
+
+  url.searchParams.set(
+    "includeDesc",
+    "true",
+  );
+
+  if (
+    input.partnerCode !== undefined
+  ) {
+    url.searchParams.set(
+      "partnerCode",
+      String(input.partnerCode),
+    );
   }
 
   return url.toString();
+}
+
+export function parseSupplierQuery(
+  searchParams: URLSearchParams,
+): {
+  ok: true;
+  value: SupplierQuery;
+} | {
+  ok: false;
+  error: string;
+} {
+  const hsCode =
+    searchParams.get("hsCode")?.trim() ||
+    "";
+
+  const marketParam =
+    searchParams.get("market")?.trim() ||
+    "";
+
+  const originParam =
+    searchParams.get("origin")?.trim() ||
+    "";
+
+  const market =
+    Number(marketParam);
+
+  const origin =
+    originParam
+      ? Number(originParam)
+      : null;
+
+  const year =
+    Number(
+      searchParams.get("year")?.trim() ||
+      "2025",
+    );
+
+  const limit =
+    Number(
+      searchParams.get("limit")?.trim() ||
+      "12",
+    );
+
+  const marketName =
+    searchParams.get("marketName")?.trim() ||
+    "";
+
+  if (
+    !/^\d{2,6}$/.test(hsCode)
+  ) {
+    return {
+      ok: false,
+      error:
+        "A valid HS code is required (2 to 6 digits).",
+    };
+  }
+
+  if (
+    !Number.isInteger(market) ||
+    market < 1
+  ) {
+    return {
+      ok: false,
+      error:
+        "Market must be a valid country code.",
+    };
+  }
+
+  if (
+    !Number.isInteger(year) ||
+    year < 2010 ||
+    year > 2026
+  ) {
+    return {
+      ok: false,
+      error:
+        "Year must be between 2010 and 2026.",
+    };
+  }
+
+  if (
+    originParam &&
+    (
+      !Number.isInteger(origin) ||
+      (origin as number) < 1
+    )
+  ) {
+    return {
+      ok: false,
+      error:
+        "Origin must be a valid country code.",
+    };
+  }
+
+  const safeLimit =
+    Number.isInteger(limit) &&
+    limit > 0
+      ? Math.min(limit, 25)
+      : 12;
+
+  return {
+    ok: true,
+    value: {
+      hsCode,
+      market,
+      marketName,
+      origin,
+      year,
+      limit: safeLimit,
+    },
+  };
+}
+
+function buildCacheKey(
+  query: SupplierQuery,
+) {
+  return [
+    query.hsCode,
+    query.market,
+    query.origin ?? "none",
+    query.year,
+    query.limit,
+  ].join(":");
 }
 
 async function fetchSupplierRecords(
@@ -125,25 +252,45 @@ async function fetchSupplierRecords(
   year: number,
   destinationCode: number,
 ): Promise<SupplierInput[]> {
-  const payload = await fetchComtradeJson<ComtradeResponse>(
-    buildComtradeUrl({
-      hsCode,
-      year,
-      reporterCode: destinationCode,
-    }),
-  );
+  const payload =
+    await fetchComtradeJson<ComtradeResponse>(
+      buildComtradeUrl({
+        hsCode,
+        year,
+        reporterCode:
+          destinationCode,
+      }),
+    );
 
-  const records = Array.isArray(payload.data)
-    ? (payload.data as ComtradeSupplierRecord[])
-    : [];
+  const records =
+    Array.isArray(payload.data)
+      ? (
+          payload.data as
+            ComtradeSupplierRecord[]
+        )
+      : [];
 
   return records
     .filter((record) => {
-      const code = Number(record.partnerCode);
-      const value = Number(record.primaryValue ?? 0);
-      const partnerIso = String(
-        record.partnerISO ?? record.partnerIso ?? "",
-      ).toUpperCase();
+      const code =
+        Number(record.partnerCode);
+
+      const value =
+        Number(
+          record.primaryValue ?? 0,
+        );
+
+      const partnerIso =
+        String(
+          record.partnerISO ??
+          record.partnerIso ??
+          "",
+        ).toUpperCase();
+
+      const name =
+        String(
+          record.partnerDesc ?? "",
+        ).trim();
 
       return (
         Number.isInteger(code) &&
@@ -152,14 +299,20 @@ async function fetchSupplierRecords(
         partnerIso !== "W00" &&
         Number.isFinite(value) &&
         value > 0 &&
-        typeof record.partnerDesc === "string" &&
-        record.partnerDesc.trim().length > 0
+        name.length > 0
       );
     })
     .map((record) => ({
-      countryCode: Number(record.partnerCode),
-      country: String(record.partnerDesc).trim(),
-      importValue: Number(record.primaryValue ?? 0),
+      countryCode:
+        Number(record.partnerCode),
+      country:
+        String(
+          record.partnerDesc,
+        ).trim(),
+      importValue:
+        Number(
+          record.primaryValue ?? 0,
+        ),
     }));
 }
 
@@ -168,220 +321,288 @@ async function fetchWorldImportValue(
   year: number,
   destinationCode: number,
 ): Promise<number | null> {
-  const payload = await fetchComtradeJson<ComtradeResponse>(
-    buildComtradeUrl({
-      hsCode,
-      year,
-      reporterCode: destinationCode,
-      partnerCode: 0,
-    }),
-  );
+  const payload =
+    await fetchComtradeJson<ComtradeResponse>(
+      buildComtradeUrl({
+        hsCode,
+        year,
+        reporterCode:
+          destinationCode,
+        partnerCode: 0,
+      }),
+    );
 
-  const records = Array.isArray(payload.data)
-    ? (payload.data as ComtradeSupplierRecord[])
-    : [];
+  const records =
+    Array.isArray(payload.data)
+      ? (
+          payload.data as
+            ComtradeSupplierRecord[]
+        )
+      : [];
 
-  const world = records.find(
-    (record) => Number(record.partnerCode) === 0,
-  );
+  const world =
+    records.find(
+      (record) =>
+        Number(record.partnerCode) === 0,
+    );
+
   const value =
-    world?.primaryValue == null ? null : Number(world.primaryValue);
+    world?.primaryValue == null
+      ? null
+      : Number(
+          world.primaryValue,
+        );
 
-  if (value == null || !Number.isFinite(value) || value <= 0) {
+  if (
+    value == null ||
+    !Number.isFinite(value) ||
+    value <= 0
+  ) {
     return null;
   }
 
   return value;
 }
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const hsCode = searchParams.get("hsCode")?.trim() || "";
-  const marketParam = searchParams.get("market")?.trim() || "";
-  const market = Number(marketParam);
-  const marketName = searchParams.get("marketName")?.trim() || "";
-  const originParam = searchParams.get("origin")?.trim() || "";
-  const origin = originParam ? Number(originParam) : null;
-  const yearParam = searchParams.get("year")?.trim() || "2025";
-  const year = Number(yearParam);
-  const limitParam = searchParams.get("limit")?.trim() || "12";
-  const limit = Number(limitParam);
+async function loadSupplierPayload(
+  query: SupplierQuery,
+): Promise<SupplierPayload> {
+  const cacheKey =
+    buildCacheKey(query);
 
-  if (!/^\d{2,6}$/.test(hsCode)) {
-    return NextResponse.json(
-      { ok: false, error: "A valid HS code is required (2 to 6 digits)." },
-      { status: 400 },
-    );
-  }
-
-  if (!Number.isInteger(market) || market < 1) {
-    return NextResponse.json(
-      { ok: false, error: "Market must be a valid country code." },
-      { status: 400 },
-    );
-  }
-
-  if (!Number.isInteger(year) || year < 2010 || year > 2026) {
-    return NextResponse.json(
-      { ok: false, error: "Year must be between 2010 and 2026." },
-      { status: 400 },
-    );
-  }
+  const cached =
+    responseCache.get(cacheKey);
 
   if (
-    originParam &&
-    (!Number.isInteger(origin) || (origin as number) < 1)
+    cached &&
+    cached.expiresAt > Date.now()
   ) {
+    return cached.payload;
+  }
+
+  if (cached) {
+    responseCache.delete(
+      cacheKey,
+    );
+  }
+
+  const running =
+    inFlight.get(cacheKey);
+
+  if (running) {
+    return running;
+  }
+
+  const promise =
+    (async () => {
+      const [
+        supplierInputs,
+        totalImportValue,
+      ] =
+        await Promise.all([
+          fetchSupplierRecords(
+            query.hsCode,
+            query.year,
+            query.market,
+          ),
+          fetchWorldImportValue(
+            query.hsCode,
+            query.year,
+            query.market,
+          ),
+        ]);
+
+      const supplierLandscape =
+        buildSupplierLandscape({
+          destinationCode:
+            query.market,
+          hsCode:
+            query.hsCode,
+          year:
+            query.year,
+          suppliers:
+            supplierInputs,
+          totalImportValue,
+          originCode:
+            query.origin,
+        });
+
+      return {
+        supplierLandscape,
+        fetchedAt:
+          new Date().toISOString(),
+      };
+    })();
+
+  inFlight.set(
+    cacheKey,
+    promise,
+  );
+
+  try {
+    const payload =
+      await promise;
+
+    responseCache.set(
+      cacheKey,
+      {
+        expiresAt:
+          Date.now() +
+          CACHE_TTL_MS,
+        payload,
+      },
+    );
+
+    return payload;
+  } finally {
+    inFlight.delete(
+      cacheKey,
+    );
+  }
+}
+
+export async function GET(
+  request: Request,
+) {
+  const requestId =
+    randomUUID();
+
+  const startedAt =
+    performance.now();
+
+  const { searchParams } =
+    new URL(request.url);
+
+  const parsed =
+    parseSupplierQuery(
+      searchParams,
+    );
+
+  if (!parsed.ok) {
     return NextResponse.json(
-      { ok: false, error: "Origin must be a valid country code." },
+      {
+        ok: false,
+        requestId,
+        durationMs: Math.round(
+          performance.now() -
+            startedAt,
+        ),
+        error: parsed.error,
+      },
       { status: 400 },
     );
   }
 
-  const safeLimit =
-    Number.isInteger(limit) && limit > 0 ? Math.min(limit, 25) : 12;
+  const query =
+    parsed.value;
 
-  const requestId = crypto.randomUUID();
-  const startedAt = performance.now();
+  const cacheKey =
+    buildCacheKey(query);
 
-  const cacheKey = supplierCacheKey({
-    hsCode,
-    market,
-    origin,
-    year,
-  });
-
-  const cached = readSupplierCache(cacheKey);
-
-  if (cached) {
-    return NextResponse.json(
-      {
-        ok: true,
-        requestId,
-        durationMs: Math.round(performance.now() - startedAt),
-        cache: "hit",
-        market: { code: market, name: marketName || null },
-        source: "UN Comtrade Preview API",
-        fetchedAt: cached.fetchedAt,
-        cacheTtlSeconds: SUPPLIER_CACHE_TTL_MS / 1000,
-        supplierLandscape: {
-          ...cached.landscape,
-          suppliers: cached.landscape.suppliers.slice(0, safeLimit),
-        },
-      },
-      {
-        headers: {
-          "Cache-Control": "private, max-age=30",
-        },
-      },
+  const cached =
+    responseCache.get(
+      cacheKey,
     );
-  }
 
-  const existingRequest = supplierInflight.get(cacheKey);
-
-  if (existingRequest) {
-    const shared = await existingRequest;
-
-    return NextResponse.json(
-      {
-        ok: true,
-        requestId,
-        durationMs: Math.round(performance.now() - startedAt),
-        cache: "inflight-shared",
-        market: { code: market, name: marketName || null },
-        source: "UN Comtrade Preview API",
-        fetchedAt: shared.fetchedAt,
-        cacheTtlSeconds: SUPPLIER_CACHE_TTL_MS / 1000,
-        supplierLandscape: {
-          ...shared.landscape,
-          suppliers: shared.landscape.suppliers.slice(0, safeLimit),
-        },
-      },
-      {
-        headers: {
-          "Cache-Control": "private, max-age=30",
-        },
-      },
+  const cacheHit =
+    Boolean(
+      cached &&
+      cached.expiresAt >
+        Date.now(),
     );
-  }
-
-  const requestPromise = (async () => {
-    const fetchedAt = new Date().toISOString();
-
-    const [supplierInputs, totalImportValue] = await Promise.all([
-      fetchSupplierRecords(hsCode, year, market),
-      fetchWorldImportValue(hsCode, year, market),
-    ]);
-
-    const landscape = buildSupplierLandscape({
-      destinationCode: market,
-      hsCode,
-      year,
-      suppliers: supplierInputs,
-      totalImportValue,
-      originCode: origin,
-    });
-
-    return {
-      landscape,
-      fetchedAt,
-    };
-  })();
-
-  supplierInflight.set(cacheKey, requestPromise);
 
   try {
-    const shared = await requestPromise;
+    const payload =
+      await loadSupplierPayload(
+        query,
+      );
 
-    writeSupplierCache(
-      cacheKey,
-      shared.landscape,
-      shared.fetchedAt,
-    );
+    const suppliers =
+      payload
+        .supplierLandscape
+        .suppliers
+        .slice(0, query.limit);
 
     return NextResponse.json(
       {
         ok: true,
         requestId,
-        durationMs: Math.round(performance.now() - startedAt),
-        cache: "miss",
-        market: { code: market, name: marketName || null },
-        source: "UN Comtrade Preview API",
-        fetchedAt: shared.fetchedAt,
-        cacheTtlSeconds: SUPPLIER_CACHE_TTL_MS / 1000,
-        supplierLandscape: {
-          ...shared.landscape,
-          suppliers: shared.landscape.suppliers.slice(0, safeLimit),
+        durationMs: Math.max(
+          0,
+          Math.round(
+            performance.now() -
+              startedAt,
+          ),
+        ),
+        market: {
+          code: query.market,
+          name:
+            query.marketName ||
+            null,
         },
-      },
-      {
-        headers: {
-          "Cache-Control": "private, max-age=30",
+        source:
+          "UN Comtrade Preview API",
+        fetchedAt:
+          payload.fetchedAt,
+        cache: cacheHit
+          ? "hit"
+          : "miss",
+        suppliers,
+        supplierLandscape: {
+          ...payload.supplierLandscape,
+          suppliers,
         },
       },
     );
   } catch (error) {
-    if (error instanceof ComtradeRateLimitError) {
+    if (
+      error instanceof
+      ComtradeRateLimitError
+    ) {
       const retryAfterSeconds =
         error.retryAfterMs == null
           ? null
-          : Math.max(1, Math.ceil(error.retryAfterMs / 1000));
+          : Math.max(
+              1,
+              Math.ceil(
+                error.retryAfterMs /
+                  1000,
+              ),
+            );
 
       return NextResponse.json(
         {
           ok: false,
+          requestId,
+          durationMs: Math.max(
+            0,
+            Math.round(
+              performance.now() -
+                startedAt,
+            ),
+          ),
           error:
             "The trade data source is temporarily rate-limited. Please retry shortly.",
-          code: "upstream_rate_limited",
+          code:
+            "upstream_rate_limited",
           retryable: true,
-          ...(retryAfterSeconds !== null ? { retryAfterSeconds } : {}),
+          ...(retryAfterSeconds !==
+          null
+            ? {
+                retryAfterSeconds,
+              }
+            : {}),
         },
         {
           status: 503,
-          ...(retryAfterSeconds !== null
+          ...(retryAfterSeconds !==
+          null
             ? {
                 headers: {
-                  "Retry-After": String(retryAfterSeconds),
+                  "Retry-After":
+                    String(
+                      retryAfterSeconds,
+                    ),
                 },
               }
             : {}),
@@ -389,19 +610,29 @@ export async function GET(request: Request) {
       );
     }
 
-    console.error("Supplier landscape error:", error);
+    console.error(
+      "Supplier landscape error:",
+      error,
+    );
 
     return NextResponse.json(
       {
         ok: false,
         requestId,
-        durationMs: Math.round(performance.now() - startedAt),
-        error: "Unable to retrieve supplier landscape data.",
+        durationMs: Math.max(
+          0,
+          Math.round(
+            performance.now() -
+              startedAt,
+          ),
+        ),
+        error:
+          "Unable to retrieve supplier landscape data.",
+        code:
+          "supplier_landscape_unavailable",
         retryable: true,
       },
       { status: 502 },
     );
-  } finally {
-    supplierInflight.delete(cacheKey);
   }
 }
