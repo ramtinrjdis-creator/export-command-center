@@ -178,7 +178,13 @@ function clamp(value: number, min = 0, max = 100) {
 function decisionSignal(
   demandScore: number,
   growthRate: number | null,
-  evidenceScore: number
+  evidenceScore: number,
+  originExportStatus:
+    | "recorded"
+    | "no_record"
+    | "unavailable"
+    | "data_unavailable"
+    | null,
 ): DecisionSignal {
   if (
     evidenceScore < 50 ||
@@ -186,6 +192,15 @@ function decisionSignal(
     (growthRate !== null && growthRate < -10)
   ) {
     return "insufficient-evidence";
+  }
+
+  /*
+   * A destination-market signal can be interesting without proving
+   * origin-market fit. Keep "promising" reserved for cases where the
+   * selected origin has positive bilateral evidence.
+   */
+  if (originExportStatus !== "recorded") {
+    return "watch";
   }
 
   if (
@@ -279,28 +294,25 @@ export function buildMarketIntelligence(
   let dataQualityStatus: EvidenceStatus = "unavailable";
   let dataQualityValue = "Not specified";
   let dataQualityNote =
-    "The source did not provide enough quality metadata.";
+    "The source did not provide enough reporting metadata.";
 
-  if (input.isReported === true && !input.isEstimated) {
+  const physicalEstimationFlag =
+    Boolean(input.isEstimated) ||
+    Boolean(input.isQuantityEstimated);
+
+  /*
+   * isReported describes whether the trade record is reported.
+   * Quantity/weight estimation flags describe physical-quantity metadata.
+   * Do not automatically downgrade reported trade value merely because
+   * quantity or weight was estimated.
+   */
+  if (input.isReported === true) {
     dataQualityPoints = 20;
     dataQualityStatus = "strong";
     dataQualityValue = "Reported";
-    dataQualityNote = "Trade value is reported by the source without an estimation flag.";
-
-    evidence.push({
-      key: "data-quality",
-      label: "Data quality",
-      value: dataQualityValue,
-      status: dataQualityStatus,
-      source: "UN Comtrade",
-      note: dataQualityNote,
-    });
-  } else if (input.isEstimated) {
-    dataQualityPoints = 10;
-    dataQualityStatus = "moderate";
-    dataQualityValue = "Estimated";
-    dataQualityNote =
-      "An estimation flag is present. Estimated quantity/weight does not by itself mean trade value is estimated.";
+    dataQualityNote = physicalEstimationFlag
+      ? "Trade value is reported; a quantity/weight field also carries an estimation flag."
+      : "Trade value is reported by the source without a physical-quantity estimation signal.";
 
     evidence.push({
       key: "data-quality",
@@ -311,24 +323,11 @@ export function buildMarketIntelligence(
       note: dataQualityNote,
     });
 
-    limitations.push(
-      "The source contains an estimation flag for reported trade data."
-    );
-  } else if (input.isReported === true) {
-    dataQualityPoints = 15;
-    dataQualityStatus = "moderate";
-    dataQualityValue = "Reported";
-    dataQualityNote =
-      "The trade record is reported, but additional estimation metadata is present or unavailable.";
-
-    evidence.push({
-      key: "data-quality",
-      label: "Data quality",
-      value: dataQualityValue,
-      status: dataQualityStatus,
-      source: "UN Comtrade",
-      note: dataQualityNote,
-    });
+    if (physicalEstimationFlag) {
+      limitations.push(
+        "A quantity/weight field carries an estimation flag; this does not by itself mean the trade value is estimated.",
+      );
+    }
   } else if (input.isReported === false) {
     dataQualityPoints = 8;
     dataQualityStatus = "limited";
@@ -346,10 +345,12 @@ export function buildMarketIntelligence(
     });
 
     limitations.push(
-      "The current trade record is not marked as directly reported."
+      "The current trade record is not marked as directly reported.",
     );
   } else {
-    limitations.push("Source reporting quality was not specified.");
+    limitations.push(
+      "Source reporting quality was not specified.",
+    );
   }
 
   // 4. Origin-specific evidence — 20 points.
@@ -497,7 +498,8 @@ export function buildMarketIntelligence(
   const signal = decisionSignal(
     input.demandScore,
     input.growthRate,
-    evidenceScore
+    evidenceScore,
+    input.originExportStatus,
   );
 
   const marketPriority: MarketPriority =

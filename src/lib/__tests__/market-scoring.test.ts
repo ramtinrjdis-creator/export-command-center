@@ -34,6 +34,7 @@ describe("market scoring", () => {
     });
 
     expect(result.riskFlags).toContain("No bilateral origin record");
+    expect(result.signal).toBe("monitor");
     expect(result.score).toBeGreaterThan(0);
   });
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ComtradeRateLimitError, fetchComtradeJson } from "@/lib/comtrade-client";
 import { buildMarketIntelligence } from "@/lib/intelligence";
 import { calculateOriginShare } from "@/lib/analysis-math";
 import { scoreMarket } from "@/lib/market-scoring";
@@ -15,7 +16,6 @@ import {
 const COMTRADE_BASE = "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
 const WORLD_BANK_BASE = "https://api.worldbank.org/v2";
 
-const COMTRADE_TIMEOUT_MS = 12_000;
 const WORLD_BANK_TIMEOUT_MS = 10_000;
 
 type TradeMarket = {
@@ -58,6 +58,7 @@ type ComtradeRecord = {
   netWgtUnitAbbr?: string | null;
   isReported?: boolean | null;
   isQtyEstimated?: boolean | null;
+  isNetWgtEstimated?: boolean | null;
   legacyEstimationFlag?: number | string | null;
   partnerCode?: number | string | null;
 };
@@ -83,17 +84,9 @@ async function fetchYear(
     url.searchParams.set("reporterCode", String(reporterCode));
   }
 
-  const response = await fetch(url.toString(), {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-    signal: AbortSignal.timeout(COMTRADE_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Comtrade returned ${response.status}`);
-  }
-
-  const data = (await response.json()) as { data?: unknown[] };
+  const data = await fetchComtradeJson<{ data?: unknown[] }>(
+    url.toString(),
+  );
   const records = Array.isArray(data.data)
     ? (data.data as ComtradeRecord[])
     : [];
@@ -149,19 +142,9 @@ async function fetchOriginImports(
   url.searchParams.set("maxRecords", "500");
   url.searchParams.set("includeDesc", "true");
 
-  const response = await fetch(url.toString(), {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-    signal: AbortSignal.timeout(COMTRADE_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Comtrade origin lookup returned ${response.status}`);
-  }
-
-  const payload = (await response.json()) as {
+  const payload = await fetchComtradeJson<{
     data?: unknown[];
-  };
+  }>(url.toString());
 
   const records = Array.isArray(payload.data)
     ? (payload.data as ComtradeRecord[])
@@ -200,10 +183,16 @@ async function fetchOriginImports(
           typeof item.isReported === "boolean" ? item.isReported : null,
         isEstimated:
           Boolean(item.isQtyEstimated) ||
-          Number(item.legacyEstimationFlag || 0) !== 0,
+          Boolean(item.isNetWgtEstimated) ||
+          [2, 4, 6].includes(
+            Number(item.legacyEstimationFlag ?? 0),
+          ),
         isQuantityEstimated:
           Boolean(item.isQtyEstimated) ||
-          Number(item.legacyEstimationFlag || 0) === 2,
+          Boolean(item.isNetWgtEstimated) ||
+          [2, 4, 6].includes(
+            Number(item.legacyEstimationFlag ?? 0),
+          ),
       };
     });
 }
@@ -730,13 +719,13 @@ export async function GET(request: Request) {
                   status === "recorded" ||
                   status === "no_record"
               )
-              ? "available"
+              ? "checked"
               : "partial",
 
         strongSignals: strongCount,
         validationTargets: validationCount,
         methodology:
-          "Candidate discovery pre-screens the full positive destination dataset using import demand, year-over-year growth, 3-year trend, evidence coverage and origin-specific checks; the top 20 are then enriched with macro context and final decision layers. Missing evidence is never treated as zero trade.",
+          "Candidate discovery pre-screens the full positive destination dataset using import demand, year-over-year growth, 3-year trend, evidence coverage and origin-specific checks; the top 20 are then enriched with macro context and final decision layers. Missing evidence is never treated as zero trade. Upstream rate limiting or failed evidence retrieval is surfaced as unavailable rather than synthesized.",
       },
       evidence: {
         sources: ["UN Comtrade", "World Bank World Development Indicators"],
@@ -746,7 +735,43 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof ComtradeRateLimitError) {
+      const retryAfterSeconds =
+        error.retryAfterMs == null
+          ? null
+          : Math.max(
+              1,
+              Math.ceil(error.retryAfterMs / 1000),
+            );
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "The trade data source is temporarily rate-limited. Please retry shortly.",
+          code: "upstream_rate_limited",
+          retryable: true,
+          ...(retryAfterSeconds !== null
+            ? { retryAfterSeconds }
+            : {}),
+        },
+        {
+          status: 503,
+          ...(retryAfterSeconds !== null
+            ? {
+                headers: {
+                  "Retry-After": String(
+                    retryAfterSeconds,
+                  ),
+                },
+              }
+            : {}),
+        },
+      );
+    }
+
     console.error("Trade analysis error:", error);
+
     return NextResponse.json(
       {
         ok: false,

@@ -225,11 +225,17 @@ function labelFor(market: Market) {
     market.opportunity?.signal === "validation-target" ? "Validation target" :
     market.opportunity?.signal === "insufficient-evidence" ? "Evidence gap" : "Monitor");
 
-  if (
-    market.originExportStatus === "unavailable" &&
-    base === "Promising market signal"
-  ) {
-    return "Strong market signal · origin unverified";
+  if (base === "Promising market signal") {
+    if (market.originExportStatus === "no_record") {
+      return "Market signal · origin gap";
+    }
+
+    if (
+      market.originExportStatus === "unavailable" ||
+      market.originExportStatus === "data_unavailable"
+    ) {
+      return "Market signal · origin unverified";
+    }
   }
 
   return base;
@@ -492,7 +498,11 @@ const [product, setProduct] = useState("Coffee");
     : "#";
 
   function marketKey(market: Market) {
-    return `${nameOf(market)}:${String(market.countryCode ?? "")}`;
+    const code = String(market.countryCode ?? "").trim();
+
+    return code
+      ? `country:${code}`
+      : `market:${nameOf(market).trim().toLowerCase()}`;
   }
 
   function focusWorkspace(market: Market) {
@@ -754,9 +764,14 @@ const [product, setProduct] = useState("Coffee");
 
   async function copyQuery() {
     if (!researchQuery) return;
-    await navigator.clipboard?.writeText(researchQuery);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+
+    try {
+      await navigator.clipboard?.writeText(researchQuery);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setCopied(false);
+    }
   }
 
   const focusMarket = selectedMarket ?? rankedMarkets[0] ?? null;
@@ -898,7 +913,14 @@ const [product, setProduct] = useState("Coffee");
           </div>
         </div>
 
-        {error ? <div className="mt-5 rounded-2xl border border-rose-300/15 bg-rose-300/[0.05] px-4 py-3 text-sm text-rose-200">{error}</div> : null}
+        {error ? (
+          <div
+            role="alert"
+            className="mt-5 rounded-2xl border border-rose-300/15 bg-rose-300/[0.05] px-4 py-3 text-sm text-rose-200"
+          >
+            {error}
+          </div>
+        ) : null}
       </section>
 
       <section id="market-results" className="scroll-mt-24 border-y border-white/[0.07] bg-black/10">
@@ -913,7 +935,22 @@ const [product, setProduct] = useState("Coffee");
               <Stat label="Markets returned" value={num(screening.globalMarketsReturned)} detail="Source response" />
               <Stat label="Candidates" value={num(screening.screenedMarkets ?? markets.length)} detail="Passed screen" />
               <Stat label="Origin checks" value={num(screening.originQueries)} detail="Bilateral checks" />
-              <Stat label="Origin data" value={screening.originDataAvailability === "available" ? "Partial coverage" : screening.originDataAvailability === "partial" ? "Partial" : screening.originDataAvailability === "unavailable" ? "Unavailable" : screening.originDataAvailability === "not-requested" ? "Not requested" : "Unknown"} detail="Never inferred as zero" />
+              <Stat
+                label="Origin data"
+                value={
+                  screening.originDataAvailability === "checked" ||
+                  screening.originDataAvailability === "available"
+                    ? "Checked"
+                    : screening.originDataAvailability === "partial"
+                      ? "Partial"
+                      : screening.originDataAvailability === "unavailable"
+                        ? "Unavailable"
+                        : screening.originDataAvailability === "not-requested"
+                          ? "Not requested"
+                          : "Unknown"
+                }
+                detail="Never inferred as zero"
+              />
             </div>
           ) : null}
 
@@ -937,7 +974,7 @@ const [product, setProduct] = useState("Coffee");
                     {error
                       ? "The market scan did not complete successfully. Review the error above and retry."
                       : markets.length
-                        ? `${markets.length} candidate markets loaded. The highest-priority market is now your working focus.`
+                        ? `${markets.length} candidate markets loaded. The highest-scoring decision target is now your working focus.`
                         : "No usable market candidates were returned for this scan."}
                   </div>
                 </div>
