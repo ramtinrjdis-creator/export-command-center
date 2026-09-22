@@ -1,1787 +1,1599 @@
 "use client";
+import { buildMarketSnapshot, compareMarketSnapshots, readSavedMarketSnapshot, saveMarketSnapshot } from "@/lib/monitoring";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
+
+type EvidenceBreakdownItem = {
+  points: number;
+  maxPoints: number;
+  status: string;
+  source: string;
+  note: string;
+};
 
 type Market = {
-  countryCode: number;
-  country: string;
-  importValue: number;
-  quantity: number;
-  unit: string | null;
-  demandScore: number;
-  isReported: boolean;
-  isQuantityEstimated: boolean;
-  previousImportValue: number | null;
-  growthRate: number | null;
-  trend: string;
-  originExportValue: number | null;
-  originExportStatus:
-    | "recorded"
-    | "no_record"
-    | "rate_limited"
-    | "data_unavailable"
-    | "unavailable"
-    | null;
-  originShare: number | null;
-  opportunity: {
-    signal:
-      | "strong-validation-target"
-      | "validation-target"
-      | "monitor"
-      | "insufficient-evidence";
-    score: number;
-    label: string;
-    reasons: string[];
-    missingEvidence: string[];
-    nextAction: string;
-  };
-  intelligence: {
-    evidenceScore: number;
-    evidenceLabel: "High" | "Medium" | "Low";
-    evidenceStatus:
-      | "strong"
-      | "moderate"
-      | "limited"
-      | "unavailable";
-    decisionSignal:
-      | "promising"
-      | "watch"
-      | "insufficient-evidence";
-    marketPriority:
-      | "priority"
-      | "monitor"
-      | "research";
-    decisionLabel: string;
-    nextAction: string;
-    evidence: {
-      key: string;
-      label: string;
-      value: string;
-      status:
-        | "strong"
-        | "moderate"
-        | "limited"
-        | "unavailable";
-      source: string;
-      note?: string;
-    }[];
-    limitations: string[];
-  };
+  market?: string;
+  marketName?: string;
+  country?: string;
+  countryCode?: string | number;
+  importValue?: number | null;
+  importValueUsd?: number | null;
+  tradeValue?: number | null;
+  yoyGrowth?: number | null;
+  growth?: number | null;
+  demandScore?: number | null;
+  score?: number | null;
+  isReported?: boolean;
+  isQuantityEstimated?: boolean;
+  quantity?: number | null;
+  quantityUnit?: string | null;
+  originExportStatus?: string | null;
+  originExportValue?: number | null;
+  opportunity?: {
+    score?: number | null;
+    signal?: string | null;
+    rationale?: string | null;
+  } | null;
+  decision?: {
+    priority?: number;
+    priorityLabel?: string;
+    confidence?: number;
+    confidenceLabel?: string;
+    decisionState?: string;
+    decisionThesis?: string;
+    researchPriority?: string;
+    nextAction?: string;
+    unknowns?: string[];
+    counterSignals?: string[];
+    invalidationTriggers?: string[];
+  } | null;
+  researchPlan?: {
+    id: string;
+    title: string;
+    why: string;
+    action: string;
+    priority: "HIGH" | "MEDIUM" | "LOW";
+    impact: number;
+    uncertainty: number;
+    cost: "Low" | "Medium";
+  }[];
+  intelligence?: {
+    decisionLabel?: string;
+    decisionSignal?: string;
+    evidenceLabel?: string;
+    evidenceScore?: number | null;
+    evidenceStatus?: string;
+    nextAction?: string;
+    limitations?: string[];
+    evidenceBreakdown?: {
+      demand?: EvidenceBreakdownItem;
+      growth?: EvidenceBreakdownItem;
+      dataQuality?: EvidenceBreakdownItem;
+      origin?: EvidenceBreakdownItem;
+      coverage?: EvidenceBreakdownItem;
+    };
+  } | null;
+  evidence?: {
+    demand?: string | boolean | null;
+    growth?: string | boolean | null;
+    origin?: string | boolean | null;
+    buyer?: string | boolean | null;
+  } | null;
+  dataTrust?: {
+    source?: string; period?: number; retrievedAt?: string; retrievalLabel?: string; truth?: string; coverage?: string; limitations?: string[];
+  } | null;
+  marketAccess?: {
+    status?: string; provider?: string; coverage?: string; nextStep?: string; limitations?: string[];
+  } | null;
+  commercialReadiness?: {
+    stage?: string; label?: string; blockers?: string[]; nextStep?: string;
+  } | null;
 };
 
 type Buyer = {
-  id: string;
-  companyName: string;
-  companyLink: string | null;
-  countryCode: number;
-  country: string | null;
-  shipmentCount: number | null;
-  matchingShipments: number | null;
-  lastShipmentDate: string | null;
-  productMatch: string | null;
-  relevanceScore: number | null;
-  specialization: number | null;
-  supplierCount: number | null;
-  source: string;
-  evidenceStatus:
-    | "strong"
-    | "moderate"
-    | "limited";
-};
-
-type BuyerSummary = {
-  total: number;
-  highSignal: number;
-  mediumSignal: number;
-  lowSignal: number;
-  verified: number;
-  partiallyVerified: number;
-  unverified: number;
-};
-
-type BuyerAnalysis = {
-  buyer: Buyer;
-  intelligence: {
-    signal:
-      | "high-signal"
-      | "medium-signal"
-      | "low-signal"
-      | "insufficient-evidence";
-    signalScore: number;
-    reasons: string[];
-    nextAction: string;
-  };
-  evidence: {
-    status:
-      | "strong"
-      | "moderate"
-      | "limited"
-      | "unavailable";
-    score: number;
-    signals: string[];
-    limitations: string[];
-  };
-  verification: {
-    status:
-      | "verified"
-      | "partially-verified"
-      | "unverified";
-    score: number;
-    verifiedSignals: string[];
-    missingSignals: string[];
-  };
-  readiness:
-    | "outreach-ready"
-    | "needs-verification"
-    | "research";
-};
-
-type BuyerProviderMeta = {
-  provider: string;
-  requestCost: number | null;
-  creditsRemaining: number | null;
-  requestId: string | null;
-  fetchedAt: string;
-};
-
-type BuyerResponse = {
-  available: boolean;
-  provider?: string;
-  status?: string;
-  reason?: string;
-  hsCode: string;
-  marketCountryCode: number;
-  buyers: BuyerAnalysis[];
-  summary: BuyerSummary;
-  limitations: string[];
-  providerMeta?: BuyerProviderMeta;
+  name?: string;
+  company?: string;
+  country?: string;
+  source?: string;
+  matchedShipments?: number | null;
+  evidence?: string | null;
+  url?: string | null;
+  intelligence?: {
+    signal?: string;
+    label?: string;
+    score?: number | null;
+  } | null;
+  verification?: {
+    status?: string;
+    label?: string;
+  } | null;
+  readiness?: "action-candidate" | "needs-verification" | "research" | null;
 };
 
 type AnalysisResponse = {
-  ok: boolean;
-  source?: string;
-  year?: string;
-  hsCode?: string;
-  markets?: Market[];
-  count?: number;
-  screening?: {
-    methodology: string;
-    globalMarketsReturned: number;
-    screenedMarkets: number;
-    originQueries: number;
-    originDataAvailability:
-      | "available"
-      | "unavailable"
-      | "unknown"
-      | null;
-    maxOriginCandidates: number;
-  };
-  evidence?: {
-    source: string;
-    methodology: string;
-    preview: boolean;
-  };
+  ok?: boolean;
   error?: string;
+  markets?: Market[];
+  screening?: {
+    methodology?: string;
+    globalMarketsReturned?: number;
+    screenedMarkets?: number;
+    originQueries?: number;
+    originDataAvailability?: string | null;
+  };
 };
 
-function formatImportValue(value: number) {
-  if (value >= 1_000_000_000) {
-    return `$${(value / 1_000_000_000).toFixed(2)}B`;
-  }
+type BuyerResearch = {
+  mode?: string;
+  market?: string;
+  queries?: string[];
+  links?: { label: string; url: string }[];
+  note?: string;
+};
 
-  if (value >= 1_000_000) {
-    return `$${(value / 1_000_000).toFixed(1)}M`;
-  }
+type BuyerResponse = {
+  ok?: boolean;
+  available?: boolean;
+  error?: string;
+  buyers?: Buyer[];
+  provider?: string | { mode?: string; configured?: boolean; source?: string };
+  research?: BuyerResearch;
+};
 
-  if (value >= 1_000) {
-    return `$${(value / 1_000).toFixed(0)}K`;
-  }
+type Country = { code: number; name: string; flag: string };
 
+const COUNTRIES: Country[] = [
+  [4, "Afghanistan", "🇦🇫"], [8, "Albania", "🇦🇱"], [12, "Algeria", "🇩🇿"],
+  [32, "Argentina", "🇦🇷"], [36, "Australia", "🇦🇺"], [40, "Austria", "🇦🇹"],
+  [31, "Azerbaijan", "🇦🇿"], [48, "Bahrain", "🇧🇭"], [50, "Bangladesh", "🇧🇩"],
+  [56, "Belgium", "🇧🇪"], [76, "Brazil", "🇧🇷"], [124, "Canada", "🇨🇦"],
+  [152, "Chile", "🇨🇱"], [156, "China", "🇨🇳"], [170, "Colombia", "🇨🇴"],
+  [203, "Czechia", "🇨🇿"], [208, "Denmark", "🇩🇰"], [818, "Egypt", "🇪🇬"],
+  [231, "Ethiopia", "🇪🇹"], [250, "France", "🇫🇷"], [268, "Georgia", "🇬🇪"],
+  [276, "Germany", "🇩🇪"], [300, "Greece", "🇬🇷"], [356, "India", "🇮🇳"],
+  [360, "Indonesia", "🇮🇩"], [364, "Iran", "🇮🇷"], [368, "Iraq", "🇮🇶"],
+  [372, "Ireland", "🇮🇪"], [380, "Italy", "🇮🇹"], [392, "Japan", "🇯🇵"],
+  [398, "Kazakhstan", "🇰🇿"], [404, "Kenya", "🇰🇪"], [414, "Kuwait", "🇰🇼"],
+  [458, "Malaysia", "🇲🇾"], [484, "Mexico", "🇲🇽"], [504, "Morocco", "🇲🇦"],
+  [528, "Netherlands", "🇳🇱"], [554, "New Zealand", "🇳🇿"], [566, "Nigeria", "🇳🇬"],
+  [578, "Norway", "🇳🇴"], [512, "Oman", "🇴🇲"], [586, "Pakistan", "🇵🇰"],
+  [608, "Philippines", "🇵🇭"], [616, "Poland", "🇵🇱"], [620, "Portugal", "🇵🇹"],
+  [634, "Qatar", "🇶🇦"], [642, "Romania", "🇷🇴"], [643, "Russia", "🇷🇺"],
+  [682, "Saudi Arabia", "🇸🇦"], [702, "Singapore", "🇸🇬"], [710, "South Africa", "🇿🇦"],
+  [410, "South Korea", "🇰🇷"], [724, "Spain", "🇪🇸"], [752, "Sweden", "🇸🇪"],
+  [756, "Switzerland", "🇨🇭"], [764, "Thailand", "🇹🇭"], [788, "Tunisia", "🇹🇳"],
+  [792, "Türkiye", "🇹🇷"], [784, "United Arab Emirates", "🇦🇪"], [804, "Ukraine", "🇺🇦"],
+  [826, "United Kingdom", "🇬🇧"], [842, "United States", "🇺🇸"], [860, "Uzbekistan", "🇺🇿"],
+  [704, "Vietnam", "🇻🇳"],
+].map(([code, name, flag]) => ({ code: Number(code), name: String(name), flag: String(flag) }));
+
+const PRODUCT_PRESETS = [
+  ["Coffee", "0901"], ["Pistachios / nuts", "0802"], ["Dates", "0804"],
+  ["Raisins", "0806"], ["Saffron / spices", "0910"], ["Copper", "7403"],
+  ["Aluminium", "7601"], ["Cement", "2523"], ["Ceramic tiles", "6907"], ["Steel", "72"],
+].map(([name, hs]) => ({ name, hs }));
+
+const YEARS = ["2025", "2024", "2023", "2022", "2021", "2020"];
+
+function money(value: number | null | undefined) {
+  if (value == null || Number.isNaN(value)) return "—";
+  if (Math.abs(value) >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
+  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
   return `$${Math.round(value).toLocaleString()}`;
 }
 
-function getOpportunityTone(
-  signal: Market["opportunity"]["signal"]
-) {
-  if (signal === "strong-validation-target") {
-    return {
-      label: "High-priority validation",
-      className:
-        "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-    };
+function num(value: number | null | undefined) {
+  if (value == null || Number.isNaN(value)) return "—";
+  return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function pct(value: number | null | undefined) {
+  if (value == null || Number.isNaN(value)) return "—";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+
+function nameOf(market: Market) {
+  return market.marketName || market.market || market.country || "Unknown market";
+}
+
+function scoreOf(market: Market) {
+  return market.decision?.priority ?? 0;
+}
+
+function toneFor(market: Market) {
+  const signal = market.opportunity?.signal;
+  if (signal === "strong-validation-target") return "emerald";
+  if (signal === "validation-target") return "cyan";
+  if (signal === "insufficient-evidence") return "amber";
+  return "slate";
+}
+
+function labelFor(market: Market) {
+  const base =
+    market.intelligence?.decisionLabel ||
+    (market.opportunity?.signal === "strong-validation-target" ? "Strong market signal" :
+    market.opportunity?.signal === "validation-target" ? "Validation target" :
+    market.opportunity?.signal === "insufficient-evidence" ? "Evidence gap" : "Monitor");
+
+  if (
+    market.originExportStatus === "unavailable" &&
+    base === "Promising market signal"
+  ) {
+    return "Strong market signal · origin unverified";
   }
 
-  if (signal === "validation-target") {
-    return {
-      label: "Validation target",
-      className:
-        "border-blue-500/20 bg-blue-500/10 text-blue-300",
-    };
-  }
+  return base;
+}
 
-  if (signal === "monitor") {
-    return {
-      label: "Monitor",
-      className:
-        "border-amber-500/20 bg-amber-500/10 text-amber-300",
-    };
-  }
+
+
+function marketBrief(market: Market) {
+  const demand = Math.round(market.demandScore ?? 0);
+  const growth = market.yoyGrowth ?? market.growth ?? null;
+  const evidence = Math.round(
+    market.intelligence?.evidenceScore ?? 0
+  );
+
+  const demandLabel =
+    demand >= 90 ? "Very high relative demand" :
+    demand >= 70 ? "High relative demand" :
+    demand >= 40 ? "Moderate relative demand" :
+    "Low relative demand";
+
+  const momentumLabel =
+    growth == null ? "Growth unavailable" :
+    growth >= 10 ? "Strong momentum" :
+    growth > 0 ? "Positive momentum" :
+    "Weakening momentum";
+
+  const evidenceLabel =
+    evidence >= 75 ? "High evidence coverage" :
+    evidence >= 50 ? "Moderate evidence coverage" :
+    "Limited evidence coverage";
+
+  const originLabel =
+    market.originExportStatus === "recorded"
+      ? "Origin signal recorded"
+      : market.originExportStatus === "no_record"
+        ? "No bilateral record returned"
+        : "Origin evidence unavailable";
+
+  const nextStep =
+    market.originExportStatus === "recorded"
+      ? "Validate buyers and market access next."
+      : "Verify origin-specific trade coverage before outreach.";
 
   return {
-    label: "Needs evidence",
-    className:
-      "border-slate-700 bg-slate-900 text-slate-400",
+    demandLabel,
+    momentumLabel,
+    evidenceLabel,
+    originLabel,
+    nextStep,
   };
 }
 
-function getOriginStatusLabel(
-  status: Market["originExportStatus"]
+
+function proPackFor(
+  market: Market,
+  comparisonMarkets: Market[] = []
 ) {
-  switch (status) {
-    case "recorded":
-      return "Origin record";
-    case "no_record":
-      return "No bilateral record";
-    case "data_unavailable":
-      return "Origin dataset unavailable";
-    case "rate_limited":
-      return "Temporarily limited";
-    case "unavailable":
-      return "Origin evidence unavailable";
-    default:
-      return "Not checked";
-  }
+  const decision = market.decision ?? {
+    priority: 0,
+    priorityLabel: "Data gap",
+    confidence: 0,
+    confidenceLabel: "Low",
+    decisionState: "resolve-data-gap",
+    decisionThesis: "Decision data is unavailable.",
+    researchPriority: "HIGH",
+    nextAction: "Resolve the current evidence gap before commercial validation.",
+    unknowns: [],
+    counterSignals: [],
+    invalidationTriggers: [],
+  };
+
+  const evidence = Math.max(
+    0,
+    Math.min(100, Math.round(market.intelligence?.evidenceScore ?? 0))
+  );
+
+  const marketName =
+    market.country ||
+    market.marketName ||
+    market.market ||
+    "Selected market";
+
+  const originStatus =
+    market.originExportStatus === "recorded"
+      ? "Recorded"
+      : market.originExportStatus === "no_record"
+        ? "No bilateral record"
+        : market.originExportStatus === "unavailable"
+          ? "Unavailable"
+          : "Not checked";
+
+  const commercialState =
+    market.originExportStatus === "recorded" &&
+    evidence >= 70 &&
+    (decision.confidence ?? 0) >= 75
+      ? "Commercially actionable"
+      : market.originExportStatus === "no_record"
+        ? "Validate origin first"
+        : evidence < 50
+          ? "Evidence weak"
+          : "Validation candidate";
+
+  const commercialReason =
+    commercialState === "Commercially actionable"
+      ? "Core market and origin evidence are strong enough to move into buyer and market-access validation."
+      : commercialState === "Validate origin first"
+        ? "Destination demand is attractive, but origin-specific trade fit still needs confirmation."
+        : commercialState === "Evidence weak"
+          ? "The signal is not sufficiently evidenced for a confident commercial decision."
+          : "The market signal is useful, but commercial validation is still incomplete.";
+
+  const rankedComparison = comparisonMarkets
+    .slice(0, 5)
+    .map((item) => {
+      const itemDecision = item.decision ?? {
+    priority: 0,
+    priorityLabel: "Data gap",
+    confidence: 0,
+    confidenceLabel: "Low",
+    decisionState: "resolve-data-gap",
+    decisionThesis: "Decision data is unavailable.",
+    researchPriority: "HIGH",
+    nextAction: "Resolve the current evidence gap before commercial validation.",
+    unknowns: [],
+    counterSignals: [],
+    invalidationTriggers: [],
+  };
+
+      return {
+        name:
+          item.country ||
+          item.marketName ||
+          item.market ||
+          "Market",
+        priority: itemDecision.priority,
+        confidence: itemDecision.confidence,
+        origin:
+          item.originExportStatus === "recorded"
+            ? "Recorded"
+            : item.originExportStatus === "no_record"
+              ? "No record"
+              : "Unavailable",
+        growth: item.yoyGrowth ?? item.growth ?? null,
+        importValue:
+          item.importValue ??
+          item.importValueUsd ??
+          item.tradeValue ??
+          null,
+      };
+    });
+
+  const validationSteps = [
+    decision.nextAction,
+    "Identify and verify qualified importers, distributors, or commercial buyers.",
+    "Verify tariff, certification, regulatory, and market-access requirements.",
+    "Compare supplier-side commercial fit, competition, and route-to-market constraints.",
+  ];
+
+  return {
+    marketName,
+    priority: decision.priority,
+    confidence: decision.confidence,
+    confidenceLabel: decision.confidenceLabel,
+    evidence,
+    evidenceState:
+      evidence >= 70
+        ? "Strong enough for a deeper validation pass."
+        : evidence >= 50
+          ? "Usable signal, but important evidence gaps remain."
+          : "Insufficient coverage for a confident commercial decision.",
+    originStatus,
+    commercialState,
+    commercialReason,
+    rankedComparison,
+    unknowns: (decision.unknowns ?? []),
+    counterSignals: (decision.counterSignals ?? []),
+    validationSteps,
+  };
 }
 
-function getOriginStatusClass(
-  status: Market["originExportStatus"]
-) {
-  if (status === "recorded") {
-    return "text-emerald-300";
-  }
 
-  if (status === "data_unavailable") {
-    return "text-amber-300";
-  }
+function proDecisionTextFor(market: Market) {
+  const pack = proPackFor(market);
 
-  return "text-slate-400";
+  return [
+    `Export Command Center — Pro Decision Pack`,
+    `Market: ${pack.marketName}`,
+    `Validation priority: ${pack.priority}/100`,
+    `Confidence: ${pack.confidence}/100 (${pack.confidenceLabel})`,
+    `Evidence coverage: ${pack.evidence}/100`,
+    `Origin evidence: ${pack.originStatus}`,
+    "",
+    `Evidence assessment: ${pack.evidenceState}`,
+    "",
+    "Critical unknowns:",
+    ...(pack.unknowns ?? []).map((item) => `- ${item}`),
+    "",
+    "Counter-signals:",
+    ...((pack.counterSignals ?? []).length
+      ? (pack.counterSignals ?? []).map((item) => `- ${item}`)
+      : ["- None currently detected in the available evidence."]),
+    "",
+    "Validation sequence:",
+    ...pack.validationSteps.map((item, index) => `${index + 1}. ${item}`),
+    "",
+    "Evidence boundary: buyer/company records and market-access claims are not presented as verified until supported by a source/provider.",
+  ].join("\n");
 }
 
 export default function Home() {
-  const [product, setProduct] = useState("");
-  const [origin, setOrigin] = useState("");
-  const [hsCode, setHsCode] = useState("");
+  const [proMode, setProMode] = useState(false);
+  const [proCopied, setProCopied] = useState(false);
+  const [proMarketIndex, setProMarketIndex] = useState(0);
+
+const [product, setProduct] = useState("Coffee");
+  const [hsCode, setHsCode] = useState("0901");
+  const [originCode, setOriginCode] = useState("364");
   const [year, setYear] = useState("2024");
+  const [countryOpen, setCountryOpen] = useState(false);
+  const [countryQuery, setCountryQuery] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [markets, setMarkets] = useState<Market[]>([]);
-  const [screening, setScreening] =
-    useState<AnalysisResponse["screening"] | null>(
-      null
-    );
-
-  const [selectedMarket, setSelectedMarket] =
-    useState<Market | null>(null);
-  const [buyers, setBuyers] = useState<
-    BuyerAnalysis[]
-  >([]);
-  const [buyerSummary, setBuyerSummary] =
-    useState<BuyerSummary | null>(null);
-  const [buyerProvider, setBuyerProvider] =
-    useState("");
-  const [buyerLoading, setBuyerLoading] =
-    useState(false);
-  const [buyerError, setBuyerError] =
-    useState("");
-  const [researchCopied, setResearchCopied] =
-    useState(false);
   const [error, setError] = useState("");
+  const [monitoringChange, setMonitoringChange] = useState<ReturnType<typeof compareMarketSnapshots> | null>(null);
+  const [markets, setMarkets] = useState<Market[]>([]);
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>
-  ) {
+  const rankedMarkets = [...markets].sort(
+    (a, b) => scoreOf(b) - scoreOf(a)
+  );
+
+  const [screening, setScreening] = useState<AnalysisResponse["screening"] | null>(null);
+
+  const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const [buyers, setBuyers] = useState<Buyer[]>([]);
+  const [buyerLoading, setBuyerLoading] = useState(false);
+  const [buyerError, setBuyerError] = useState("");
+  const [buyerProvider, setBuyerProvider] = useState<BuyerResponse["provider"] | null>(null);
+  const [buyerResearch, setBuyerResearch] = useState<BuyerResearch | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const selectedCountry = COUNTRIES.find((c) => String(c.code) === originCode) || COUNTRIES.find((c) => c.code === 364)!;
+
+  const filteredCountries = useMemo(() => {
+    const q = countryQuery.trim().toLowerCase();
+    return q
+      ? COUNTRIES.filter((c) => c.name.toLowerCase().includes(q) || String(c.code).includes(q))
+      : COUNTRIES;
+  }, [countryQuery]);
+
+  const selectedName = selectedMarket ? nameOf(selectedMarket) : "";
+  const researchQuery = selectedMarket
+    ? `"${product || "Product"}" importer buyer "${selectedName}" HS ${hsCode}`
+    : "";
+  const researchUrl = researchQuery
+    ? `https://www.google.com/search?q=${encodeURIComponent(researchQuery)}`
+    : "#";
+
+  async function scan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    const cleanProduct = product.trim();
-    const cleanOrigin = origin.trim();
-    const cleanHsCode = hsCode.trim();
-
-    if (
-      !cleanProduct ||
-      !cleanOrigin ||
-      !/^\d{2,6}$/.test(cleanHsCode)
-    ) {
+    const cleanHs = hsCode.replace(/\D/g, "").slice(0, 6);
+    if (!/^\d{2,6}$/.test(cleanHs)) {
+      setError("Choose a product or enter a valid 2–6 digit HS code.");
       return;
     }
 
     setLoading(true);
-    setSearched(false);
     setError("");
+    setSearched(false);
     setMarkets([]);
     setScreening(null);
-
     setSelectedMarket(null);
+    setProMarketIndex(0);
     setBuyers([]);
-    setBuyerSummary(null);
-    setBuyerProvider("");
     setBuyerError("");
-    setResearchCopied(false);
+    setBuyerResearch(null);
 
     try {
-      const params = new URLSearchParams({
-        hsCode: cleanHsCode,
-        year,
-        origin: cleanOrigin,
-      });
-
-      const response = await fetch(
-        `/api/analyze?${params.toString()}`,
-        {
-          cache: "no-store",
-        }
-      );
-
-      const data: AnalysisResponse =
-        await response.json();
-
-      if (!response.ok || !data.ok) {
-        throw new Error(
-          data.error || "Analysis failed."
-        );
-      }
-
+      const params = new URLSearchParams({ hsCode: cleanHs, year, origin: originCode });
+      const response = await fetch(`/api/analyze?${params.toString()}`);
+      const data = (await response.json()) as AnalysisResponse;
+      if (!response.ok || !data.ok) throw new Error(data.error || "Market scan failed.");
       setMarkets(data.markets ?? []);
+      const currentSnapshot = buildMarketSnapshot(data.markets ?? []);
+      const previousSnapshot = readSavedMarketSnapshot();
+      setMonitoringChange(compareMarketSnapshots(previousSnapshot, currentSnapshot));
+      saveMarketSnapshot(currentSnapshot);
       setScreening(data.screening ?? null);
       setSearched(true);
-
-      window.setTimeout(() => {
-        document
-          .getElementById("market-results")
-          ?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          });
-      }, 50);
+      window.setTimeout(() => document.getElementById("results")?.scrollIntoView({ behavior: "smooth" }), 60);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to retrieve trade data."
-      );
+      setError(err instanceof Error ? err.message : "Market scan failed.");
+      setSearched(true);
     } finally {
       setLoading(false);
     }
   }
 
-  function getResearchQuery(market: Market) {
-    return `"${product.trim()}" importer buyer "${market.country}" HS ${hsCode.trim()}`;
-  }
-
-  function getResearchUrl(market: Market) {
-    return `https://www.google.com/search?q=${encodeURIComponent(
-      getResearchQuery(market)
-    )}`;
-  }
-
-  async function copyResearchQuery(
-    market: Market
-  ) {
-    const query = getResearchQuery(market);
-
-    try {
-      await navigator.clipboard.writeText(query);
-      setResearchCopied(true);
-
-      window.setTimeout(() => {
-        setResearchCopied(false);
-      }, 2000);
-    } catch {
-      setResearchCopied(false);
-    }
-  }
-
-  async function loadBuyers(market: Market) {
+  async function investigate(market: Market) {
     setSelectedMarket(market);
-    setBuyers([]);
-    setBuyerSummary(null);
-    setBuyerProvider("");
-    setBuyerError("");
-    setResearchCopied(false);
     setBuyerLoading(true);
-
+    setBuyerError("");
+    setBuyers([]);
+    setBuyerProvider(null);
+    setBuyerResearch(null);
     try {
       const params = new URLSearchParams({
-        hsCode: hsCode.trim(),
-        market: String(market.countryCode),
-        productDescription: product.trim(),
+        hsCode,
+        market: String(market.countryCode ?? ""),
+        marketName: nameOf(market),
+        productDescription: product,
         limit: "10",
       });
-
-      const response = await fetch(
-        `/api/buyers?${params.toString()}`,
-        {
-          cache: "no-store",
-        }
-      );
-
-      const data =
-        (await response.json()) as BuyerResponse;
-
-      if (!response.ok) {
-        throw new Error(
-          typeof data.reason === "string"
-            ? data.reason
-            : "Buyer search failed."
-        );
-      }
-
-      setBuyerProvider(data.provider ?? "");
+      const response = await fetch(`/api/buyers?${params.toString()}`);
+      const data = (await response.json()) as BuyerResponse;
+      if (!response.ok || data.ok === false) throw new Error(data.error || "Buyer research unavailable.");
       setBuyers(data.buyers ?? []);
-      setBuyerSummary(data.summary ?? null);
-
-      if (
-        !data.available &&
-        data.limitations?.length
-      ) {
-        setBuyerError(data.limitations[0]);
-      }
-
-      window.setTimeout(() => {
-        document
-          .getElementById("buyer-intelligence")
-          ?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          });
-      }, 50);
+      setBuyerProvider(data.provider ?? null);
+      setBuyerResearch(data.research ?? null);
+      window.setTimeout(() => document.getElementById("buyers")?.scrollIntoView({ behavior: "smooth" }), 60);
     } catch (err) {
-      setBuyerError(
-        err instanceof Error
-          ? err.message
-          : "Buyer search failed."
-      );
+      setBuyerError(err instanceof Error ? err.message : "Buyer research unavailable.");
     } finally {
       setBuyerLoading(false);
     }
   }
 
-  return (
-    <main className="min-h-screen bg-[#070b14] text-white selection:bg-blue-500/30">
-      <nav className="sticky top-0 z-30 border-b border-white/5 bg-[#070b14]/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
-          <a
-            href="#top"
-            className="group"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-300">
-                EC
-              </div>
+  async function copyQuery() {
+    if (!researchQuery) return;
+    await navigator.clipboard?.writeText(researchQuery);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  }
 
-              <div>
-                <div className="text-sm font-bold tracking-tight">
-                  Export Command Center
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  Evidence-driven export intelligence
-                </div>
-              </div>
+  const focusMarket = selectedMarket ?? rankedMarkets[0] ?? null;
+
+  return (
+    <main className="min-h-screen overflow-x-hidden bg-[#05080d] text-white selection:bg-cyan-300/20 selection:text-cyan-100 ecc-v7">
+      
+
+      
+
+
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_12%_0%,rgba(34,211,238,.1),transparent_30%),radial-gradient(circle_at_90%_12%,rgba(16,185,129,.075),transparent_26%)]" />
+      <div className="pointer-events-none fixed inset-0 -z-10 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:52px_52px]" />
+
+      <header className="sticky top-0 z-50 border-b border-white/[0.07] bg-[#05080d]/80 backdrop-blur-2xl ecc-v7-header">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 md:px-8">
+          <a href="#top" className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl border border-cyan-300/20 bg-cyan-300/10 text-sm font-black text-cyan-200">EC</div>
+            <div>
+              <div className="text-sm font-semibold tracking-tight">Export Command Center</div>
+              <div className="text-[9px] uppercase tracking-[0.22em] text-white/28">Trade intelligence</div>
             </div>
           </a>
 
-          <div className="hidden items-center gap-7 text-xs font-medium text-slate-400 sm:flex">
-            <a
-              href="#market-results"
-              className="transition hover:text-white"
-            >
-              Markets
-            </a>
-            <a
-              href="#buyer-intelligence"
-              className="transition hover:text-white"
-            >
-              Buyers
-            </a>
-            <a
-              href="#methodology"
-              className="transition hover:text-white"
-            >
-              Evidence
-            </a>
-            <span className="rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1 text-slate-300">
-              MVP
-            </span>
+          <nav className="hidden items-center gap-7 text-xs text-white/40 md:flex">
+            <a href="#scanner" className="hover:text-white">Scanner</a>
+            <a href="#market-results" className="hover:text-white">Markets</a>
+            <a href="#buyers" className="hover:text-white">Buyers</a>
+            <a href="#evidence" className="hover:text-white">Evidence</a>
+          <a href="#decision-workspace" className="transition hover:text-white">Workspace</a>
+          <a href="#pro" className="transition hover:text-white">Pro</a>
+          </nav>
+
+          <span className="rounded-full border border-white/9 bg-white/[0.025] px-3 py-1.5 text-[10px] text-white/35">Evidence-first mode</span>
+        </div>
+      </header>
+      <div className="ecc-v7-command-rail-wrap pointer-events-none">
+        <div className="ecc-v7-command-rail pointer-events-auto">
+          <div className="ecc-v7-command-rail-inner" aria-label="Export intelligence workflow">
+            <a className="ecc-v7-command-step" href="#top"><span>01</span><span>Scan</span></a>
+            <a className="ecc-v7-command-step" href="#market-results"><span>02</span><span>Markets</span></a>
+            <a className="ecc-v7-command-step" href="#evidence"><span>03</span><span>Evidence</span></a>
+            <a className="ecc-v7-command-step" href="#decision-workspace"><span>04</span><span>Decision</span></a>
+            <a className="ecc-v7-command-step" href="#buyers"><span>05</span><span>Buyers</span></a>
+            <a className="ecc-v7-command-step" href="#pro"><span>06</span><span>Pro</span></a>
           </div>
         </div>
-      </nav>
+      </div>
 
-      <section
-        id="top"
-        className="relative overflow-hidden"
-      >
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute left-1/2 top-0 h-[520px] w-[720px] -translate-x-1/2 rounded-full bg-blue-600/10 blur-3xl" />
-          <div className="absolute right-0 top-40 h-64 w-64 rounded-full bg-cyan-500/5 blur-3xl" />
-        </div>
 
-        <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-16 sm:px-8 sm:pb-24 sm:pt-24">
-          <div className="mx-auto max-w-4xl text-center">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/8 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-300">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-              Export Intelligence
+      <section id="top" className="mx-auto max-w-7xl px-5 pb-12 pt-14 md:px-8 md:pb-20 md:pt-20 ecc-v7-hero">
+        <div className="grid gap-10 lg:grid-cols-[1.03fr_.97fr] lg:items-end">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/80">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" /> Evidence-first export intelligence
             </div>
-
-            <h1 className="text-4xl font-bold leading-[1.05] tracking-tight sm:text-6xl">
-              Find the markets worth
-              <span className="block bg-gradient-to-r from-blue-300 via-blue-400 to-cyan-300 bg-clip-text text-transparent">
-                your next export move.
-              </span>
-            </h1>
-
-            <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-slate-400 sm:text-lg">
-              Start with real international trade data,
-              understand what the evidence actually supports,
-              and leave with a clear next validation step.
-            </p>
-
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              {[
-                "Real trade data",
-                "Transparent signals",
-                "Evidence gaps",
-                "Buyer research",
-              ].map((item) => (
-                <span
-                  key={item}
-                  className="rounded-full border border-white/7 bg-white/3 px-3.5 py-2 text-xs text-slate-400"
-                >
-                  {item}
-                </span>
+            <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[.98] tracking-[-0.06em] md:text-7xl">Find where your product has demand before you spend time chasing buyers.</h1>
+            <p className="mt-6 max-w-2xl text-base leading-8 text-white/45 md:text-lg">Start with a product and an origin. We turn trade data into market signals, show the evidence behind them, and tell you what still needs validation.</p>
+            <div className="mt-7 flex flex-wrap gap-2">
+              {["Demand", "Growth", "Origin evidence", "Buyer research"].map((item) => (
+                <span key={item} className="rounded-full border border-white/8 bg-white/[0.02] px-3 py-2 text-[10px] text-white/40">{item}</span>
               ))}
             </div>
           </div>
 
-          <form
-            onSubmit={handleSubmit}
-            className="mx-auto mt-12 max-w-6xl rounded-[28px] border border-white/8 bg-white/[0.035] p-4 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-6"
-          >
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.15fr_0.8fr_1fr_0.72fr_auto] xl:items-end">
+          <div id="scanner" className="rounded-[30px] border border-white/[0.09] bg-white/[0.035] p-4 shadow-2xl shadow-black/30 md:p-5">
+            <div className="flex items-start justify-between gap-4 border-b border-white/[0.07] pb-5">
               <div>
-                <label
-                  htmlFor="product"
-                  className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400"
-                >
-                  Product
-                </label>
-
-                <input
-                  id="product"
-                  required
-                  maxLength={120}
-                  value={product}
-                  onChange={(event) =>
-                    setProduct(event.target.value)
-                  }
-                  placeholder="e.g. Coffee"
-                  className="w-full rounded-2xl border border-white/8 bg-[#090f1b] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500/60 focus:ring-4 focus:ring-blue-500/10"
-                />
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/25">Market scanner</div>
+                <div className="mt-1 text-base font-medium text-white/85">No trade jargon required.</div>
               </div>
+              <span className="rounded-full border border-emerald-300/15 bg-emerald-300/[0.05] px-2.5 py-1 text-[9px] uppercase tracking-[0.15em] text-emerald-200/80">Ready</span>
+            </div>
 
-              <div>
-                <label
-                  htmlFor="hsCode"
-                  className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400"
-                >
-                  HS Code
-                </label>
-
-                <input
-                  id="hsCode"
-                  required
-                  value={hsCode}
-                  onChange={(event) =>
-                    setHsCode(
-                      event.target.value.replace(
-                        /\D/g,
-                        ""
-                      )
-                    )
-                  }
-                  placeholder="0901"
-                  inputMode="numeric"
-                  maxLength={6}
-                  pattern="[0-9]{2,6}"
-                  className="w-full rounded-2xl border border-white/8 bg-[#090f1b] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500/60 focus:ring-4 focus:ring-blue-500/10"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="origin"
-                  className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400"
-                >
-                  Export Origin
-                </label>
-
-                <input
-                  id="origin"
-                  required
-                  value={origin}
-                  onChange={(event) =>
-                    setOrigin(event.target.value)
-                  }
-                  placeholder="e.g. Iran"
-                  list="origin-suggestions"
-                  className="w-full rounded-2xl border border-white/8 bg-[#090f1b] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500/60 focus:ring-4 focus:ring-blue-500/10"
-                />
-
-                <datalist id="origin-suggestions">
-                  <option value="Iran" />
-                  <option value="United States" />
-                  <option value="Germany" />
-                  <option value="Turkey" />
-                  <option value="China" />
-                  <option value="India" />
-                  <option value="Italy" />
-                  <option value="Canada" />
-                  <option value="Spain" />
-                  <option value="Japan" />
-                </datalist>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="year"
-                  className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400"
-                >
-                  Trade Year
-                </label>
-
-                <select
-                  id="year"
-                  value={year}
-                  onChange={(event) =>
-                    setYear(event.target.value)
-                  }
-                  className="w-full rounded-2xl border border-white/8 bg-[#090f1b] px-4 py-3.5 text-sm text-white outline-none transition focus:border-blue-500/60 focus:ring-4 focus:ring-blue-500/10"
-                >
-                  {[
-                    "2026",
-                    "2025",
-                    "2024",
-                    "2023",
-                    "2022",
-                    "2021",
-                    "2020",
-                  ].map((option) => (
-                    <option
-                      key={option}
-                      value={option}
-                    >
-                      {option}
-                      {option === "2026"
-                        ? " · current"
-                        : ""}
-                    </option>
+            <form onSubmit={scan} className="mt-5 space-y-4">
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-white/28">What are you exporting?</span>
+                <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="Coffee, saffron, pistachios..." className="w-full rounded-2xl border border-white/9 bg-black/20 px-4 py-3.5 text-sm text-white outline-none placeholder:text-white/20 focus:border-cyan-300/30" />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {PRODUCT_PRESETS.slice(0, 7).map((preset) => (
+                    <button key={preset.name} type="button" onClick={() => { setProduct(preset.name); setHsCode(preset.hs); }} className="rounded-full border border-white/8 bg-white/[0.02] px-2.5 py-1.5 text-[10px] text-white/40 hover:border-cyan-300/20 hover:text-cyan-100">{preset.name}</button>
                   ))}
-                </select>
+                </div>
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-white/28">Product classification</span>
+                  <input value={hsCode} onChange={(e) => setHsCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="HS 0901" className="w-full rounded-2xl border border-white/9 bg-black/20 px-4 py-3.5 text-sm text-white outline-none placeholder:text-white/20 focus:border-cyan-300/30" />
+                  <span className="mt-1.5 block text-[10px] text-white/20">Use a known HS code or a suggested preset above.</span>
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-white/28">Trade year</span>
+                  <select value={year} onChange={(e) => setYear(e.target.value)} className="w-full rounded-2xl border border-white/9 bg-black/20 px-4 py-3.5 text-sm text-white outline-none focus:border-cyan-300/30">
+                    {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </label>
               </div>
 
-              <button
-                type="submit"
-                disabled={
-                  loading ||
-                  !product.trim() ||
-                  !origin.trim() ||
-                  !/^\d{2,6}$/.test(
-                    hsCode.trim()
-                  )
-                }
-                className="rounded-2xl bg-blue-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-900/20 transition hover:bg-blue-500 hover:shadow-blue-900/30 disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                {loading
-                  ? "Analyzing..."
-                  : "Find Markets"}
-              </button>
-            </div>
+              <div>
+                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-white/28">Export origin</span>
+                <div className="relative">
+                  <button type="button" onClick={() => setCountryOpen((open) => !open)} className="flex w-full items-center justify-between rounded-2xl border border-white/9 bg-black/20 px-4 py-3.5 text-left hover:border-white/15">
+                    <span className="flex items-center gap-3"><span className="text-xl">{selectedCountry.flag}</span><span><span className="block text-sm text-white/85">{selectedCountry.name}</span><span className="mt-0.5 block text-[10px] text-white/20">Search and select any supported country</span></span></span>
+                    <span className="text-white/30">{countryOpen ? "⌃" : "⌄"}</span>
+                  </button>
 
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4">
-              <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
-                <span>Annual trade data</span>
-                <span>Demand + growth screening</span>
-                <span>Origin validation</span>
+                  {countryOpen ? (
+                    <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 overflow-hidden rounded-2xl border border-white/10 bg-[#0a1118] p-2 shadow-2xl">
+                      <input autoFocus value={countryQuery} onChange={(e) => setCountryQuery(e.target.value)} placeholder="Search country..." className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2.5 text-xs text-white outline-none placeholder:text-white/20 focus:border-cyan-300/30" />
+                      <div className="mt-2 max-h-64 overflow-auto">
+                        {filteredCountries.map((country) => (
+                          <button key={country.code} type="button" onClick={() => { setOriginCode(String(country.code)); setCountryOpen(false); setCountryQuery(""); }} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-white/[0.05] ${country.code === selectedCountry.code ? "bg-cyan-300/[0.06] text-cyan-100" : "text-white/60"}`}>
+                            <span className="text-lg">{country.flag}</span><span className="flex-1">{country.name}</span><span className="text-[9px] text-white/15">{country.code}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
-              <span className="text-[11px] text-slate-600">
-                2–6 digit HS code
-              </span>
-            </div>
-          </form>
+              <div className="flex flex-col gap-3 border-t border-white/[0.07] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <div><div className="text-[9px] uppercase tracking-[0.16em] text-white/20">Scan definition</div><div className="mt-1 text-xs text-white/45">{product || "Product"} · HS {hsCode || "—"} · {selectedCountry.name} · {year}</div></div>
+                <button disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3.5 text-sm font-semibold text-[#061016] hover:bg-cyan-50 disabled:opacity-60">{loading ? "Analyzing..." : "Analyze markets ↗"}</button>
+              </div>
+            </form>
+          </div>
         </div>
+
+        {error ? <div className="mt-5 rounded-2xl border border-rose-300/15 bg-rose-300/[0.05] px-4 py-3 text-sm text-rose-200">{error}</div> : null}
       </section>
 
-      {error && (
-        <section className="border-y border-red-500/10 bg-red-500/5">
-          <div className="mx-auto max-w-7xl px-5 py-6 sm:px-8">
-            <div
-              role="alert"
-              className="rounded-2xl border border-red-500/15 bg-red-950/20 p-5"
-            >
-              <p className="text-sm font-semibold text-red-300">
-                Analysis could not be completed
-              </p>
-              <p className="mt-2 text-sm leading-6 text-red-200/70">
-                {error}
-              </p>
-            </div>
+      <section id="market-results" className="scroll-mt-24 border-y border-white/[0.07] bg-black/10">
+        <div className="mx-auto max-w-7xl px-5 py-14 md:px-8 md:py-20">
+          <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+            <div><div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">01 / Market intelligence</div><h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">Markets worth validating</h2><p className="mt-3 max-w-2xl text-sm leading-7 text-white/38">A signal is a reason to investigate, not a promise of a sale.</p></div>
+            {searched ? <span className="rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-3 text-xs text-white/50">{product} · HS {hsCode} · {selectedCountry.name}</span> : null}
           </div>
-        </section>
-      )}
 
-      {searched && (
-        <section
-          id="market-results"
-          className="scroll-mt-24 border-y border-white/6 bg-[#0a0f1a]"
-        >
-          <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-18">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="rounded-full border border-emerald-500/15 bg-emerald-500/8 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
-                    Live trade analysis
-                  </span>
-
-                  <span className="text-xs text-slate-600">
-                    {year} annual data
-                  </span>
-                </div>
-
-                <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
-                  Markets worth validating for{" "}
-                  <span className="text-blue-300">
-                    {product}
-                  </span>
-                </h2>
-
-                <p className="mt-3 text-sm leading-6 text-slate-500">
-                  Origin: {origin} · HS {hsCode} ·
-                  The engine screens demand and growth first,
-                  then checks origin-specific evidence where
-                  the source provides it.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/7 bg-white/[0.025] px-5 py-4">
-                <div className="text-2xl font-bold text-white">
-                  {markets.length}
-                </div>
-                <div className="mt-1 text-xs text-slate-500">
-                  validation candidates
-                </div>
-              </div>
+          {searched && screening ? (
+            <div className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-4">
+              <Stat label="Markets returned" value={num(screening.globalMarketsReturned)} detail="Source response" />
+              <Stat label="Candidates" value={num(screening.screenedMarkets ?? markets.length)} detail="Passed screen" />
+              <Stat label="Origin checks" value={num(screening.originQueries)} detail="Bilateral checks" />
+              <Stat label="Origin data" value={screening.originDataAvailability === "available" ? "Partial coverage" : screening.originDataAvailability === "partial" ? "Partial" : screening.originDataAvailability === "unavailable" ? "Unavailable" : screening.originDataAvailability === "not-requested" ? "Not requested" : "Unknown"} detail="Never inferred as zero" />
             </div>
+          ) : null}
 
-            {screening && (
-              <div className="mt-8 grid gap-3 sm:grid-cols-3">
-                <Metric
-                  label="Markets screened"
-                  value={String(
-                    screening.globalMarketsReturned
-                  )}
-                  detail="Global import records returned"
-                />
+          {markets.length ? (
+            <div className="mt-8 grid gap-5 lg:grid-cols-2">
+              {rankedMarkets.map((market, index) => {
+                const tone = toneFor(market);
+                const score = scoreOf(market);
+                const growth = market.yoyGrowth ?? market.growth;
+                return (
+                  <article key={`${nameOf(market)}-${index}`} className="rounded-[28px] border border-white/[0.08] bg-white/[0.025] p-5 md:p-6">
+                    <div className="flex items-start justify-between gap-5"><div className="min-w-0"><Badge tone={tone}>{labelFor(market)}</Badge><h3 className="mt-4 truncate text-2xl font-semibold tracking-tight">{nameOf(market)}</h3><p className="mt-1 text-xs text-white/20">Market candidate #{String(index + 1).padStart(2, "0")}</p></div><div className="grid h-20 w-20 shrink-0 place-items-center rounded-full border border-cyan-300/15 bg-cyan-300/[0.04]"><div className="text-center"><div className="text-xl font-semibold">{score}</div><div className="text-[8px] uppercase tracking-[0.18em] text-white/22">validation priority</div></div></div></div>
 
-                <Metric
-                  label="Candidates"
-                  value={String(
-                    screening.screenedMarkets
-                  )}
-                  detail="Passed transparent screening"
-                  emphasis="blue"
-                />
+                    <div className="mt-6 grid grid-cols-3 gap-2"><Stat label="Import demand" value={money(market.importValue ?? market.importValueUsd ?? market.tradeValue)} /><Stat label="1Y growth" value={pct(growth)} /><Stat label="Relative demand" value={`${Math.round(market.demandScore ?? 0)}/100`} /></div>
+                      {(() => {
+                        const brief = marketBrief(market);
 
-                <Metric
-                  label="Origin evidence"
-                  value={
-                    screening.originDataAvailability ===
-                    "available"
-                      ? "Available"
-                      : screening.originDataAvailability ===
-                          "unavailable"
-                        ? "Unavailable"
-                        : screening.originDataAvailability ===
-                            "unknown"
-                          ? "Unknown"
-                          : "Not requested"
-                  }
-                  detail={`${screening.originQueries} bilateral queries`}
-                />
-              </div>
-            )}
-
-            {markets.length === 0 ? (
-              <div className="mt-8 rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-slate-500">
-                  —
-                </div>
-                <p className="mt-4 font-semibold text-white">
-                  No screened markets were returned.
-                </p>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-                  Try another HS code or trade year.
-                  A market is only shown when it passes
-                  the transparent demand/growth screen.
-                </p>
-              </div>
-            ) : (
-              <div className="mt-8 grid gap-5 lg:grid-cols-2">
-                {markets.slice(0, 12).map((market, index) => {
-                  const tone = getOpportunityTone(
-                    market.opportunity.signal
-                  );
-
-                  return (
-                    <article
-                      key={market.countryCode}
-                      className="group rounded-3xl border border-white/7 bg-white/[0.025] p-5 transition hover:border-blue-500/20 hover:bg-white/[0.035] sm:p-6"
-                    >
-                      <div className="flex flex-col gap-5">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                                #{index + 1}
-                              </span>
-
-                              <span
-                                className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${tone.className}`}
-                              >
-                                {tone.label}
-                              </span>
+                        return (
+                          <div className="mb-4 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.025] p-4">
+                            <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">
+                              Market brief
                             </div>
 
-                            <h3 className="mt-3 text-2xl font-bold tracking-tight text-white">
-                              {market.country}
-                            </h3>
-
-                            <p className="mt-1 text-xs text-slate-500">
-                              Import-market signal
-                            </p>
-                          </div>
-
-                          <div className="shrink-0 text-right">
-                            <div className="text-4xl font-bold tracking-tight text-blue-300">
-                              {market.opportunity.score}
-                            </div>
-                            <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-slate-600">
-                              Validation
-                            </div>
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-slate-500">
-                              Relative demand
-                            </span>
-
-                            <span className="font-semibold text-slate-300">
-                              {market.demandScore}/100
-                            </span>
-                          </div>
-
-                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-900">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-blue-700 via-blue-500 to-cyan-400"
-                              style={{
-                                width: `${market.demandScore}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <StatCard
-                            label="Import value"
-                            value={formatImportValue(
-                              market.importValue
-                            )}
-                            detail="Current-year imports"
-                          />
-
-                          <StatCard
-                            label="YoY growth"
-                            value={
-                              market.growthRate ===
-                              null
-                                ? "—"
-                                : `${
-                                    market.growthRate >
-                                    0
-                                      ? "+"
-                                      : ""
-                                  }${market.growthRate}%`
-                            }
-                            detail={market.trend}
-                          />
-
-                          <StatCard
-                            label="Trade record"
-                            value={
-                              market.isReported
-                                ? "Reported"
-                                : "Source data"
-                            }
-                            detail="UN Comtrade"
-                          />
-
-                          <StatCard
-                            label="Quantity"
-                            value={
-                              market.quantity > 0
-                                ? Math.round(
-                                    market.quantity
-                                  ).toLocaleString()
-                                : "—"
-                            }
-                            detail={
-                              market.quantity > 0
-                                ? market.isQuantityEstimated
-                                  ? "Estimated quantity"
-                                  : "Quantity available"
-                                : "Not available"
-                            }
-                          />
-                        </div>
-
-                        <div className="rounded-2xl border border-white/6 bg-[#080d17] p-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                                Opportunity logic
-                              </p>
-
-                              <p className="mt-2 text-sm font-semibold text-white">
-                                {market.opportunity.label}
-                              </p>
-                            </div>
-
-                            <div className="text-right">
-                              <div className="text-lg font-bold text-slate-200">
-                                {market.intelligence.evidenceScore}
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <div className="rounded-xl bg-white/[0.025] p-3">
+                                <div className="text-[9px] uppercase tracking-[0.14em] text-white/25">Relative demand</div>
+                                <div className="mt-1 text-xs text-white/70">{brief.demandLabel}</div>
                               </div>
-                              <div className="text-[10px] uppercase tracking-wider text-slate-600">
-                                evidence
+
+                              <div className="rounded-xl bg-white/[0.025] p-3">
+                                <div className="text-[9px] uppercase tracking-[0.14em] text-white/25">Momentum</div>
+                                <div className="mt-1 text-xs text-white/70">{brief.momentumLabel}</div>
+                              </div>
+
+                              <div className="rounded-xl bg-white/[0.025] p-3">
+                                <div className="text-[9px] uppercase tracking-[0.14em] text-white/25">Evidence</div>
+                                <div className="mt-1 text-xs text-white/70">{brief.evidenceLabel}</div>
+                              </div>
+
+                              <div className="rounded-xl bg-white/[0.025] p-3">
+                                <div className="text-[9px] uppercase tracking-[0.14em] text-white/25">Origin</div>
+                                <div className="mt-1 text-xs text-white/70">{brief.originLabel}</div>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 border-t border-white/6 pt-3">
+                              <div className="text-[9px] uppercase tracking-[0.14em] text-white/25">
+                                Next validation step
+                              </div>
+                              <div className="mt-1 text-xs leading-5 text-white/60">
+                                {brief.nextStep}
                               </div>
                             </div>
                           </div>
+                        );
+                      })()}
 
-                          <div className="mt-4 space-y-2">
-                            {market.opportunity.reasons
-                              .slice(0, 3)
-                              .map((reason) => (
-                                <div
-                                  key={reason}
-                                  className="flex gap-2 text-xs leading-5 text-slate-300"
-                                >
-                                  <span className="text-emerald-400">
-                                    ✓
-                                  </span>
-                                  <span>{reason}</span>
-                                </div>
-                              ))}
-                          </div>
 
-                          {market.opportunity.missingEvidence
-                            .length > 0 && (
-                            <div className="mt-4 border-t border-white/6 pt-4">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-300/80">
-                                Evidence gap
-                              </p>
+                    {(() => {
+                        const decision = market.decision ?? {
+                          priority: 0,
+                          priorityLabel: "Data gap",
+                          confidence: 0,
+                          confidenceLabel: "Low",
+                          decisionState: "resolve-data-gap",
+                          decisionThesis: "Decision data is unavailable.",
+                          researchPriority: "HIGH",
+                          nextAction: "Resolve the current evidence gap before commercial validation.",
+                          unknowns: [],
+                          counterSignals: [],
+                          invalidationTriggers: [],
+                        };
 
-                              <p className="mt-2 text-xs leading-5 text-amber-200/75">
-                                {
-                                  market.opportunity
-                                    .missingEvidence[0]
-                                }
-                              </p>
-                            </div>
-                          )}
-
-                          <div className="mt-4 border-t border-white/6 pt-4">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                              Next action
-                            </p>
-
-                            <p className="mt-2 text-sm leading-6 text-slate-300">
-                              {market.opportunity.nextAction}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-3 rounded-2xl border border-white/6 bg-white/[0.018] p-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <p
-                              className={`text-xs font-semibold ${getOriginStatusClass(
-                                market.originExportStatus
-                              )}`}
-                            >
-                              {getOriginStatusLabel(
-                                market.originExportStatus
-                              )}
-                            </p>
-
-                            <p className="mt-1 text-[11px] leading-5 text-slate-600">
-                              {market.originShare !==
-                              null
-                                ? `${market.originShare}% of this market's imports`
-                                : market.originExportStatus ===
-                                    "no_record"
-                                  ? "No bilateral record returned"
-                                  : market.originExportStatus ===
-                                      "data_unavailable"
-                                    ? "The source did not provide an origin dataset"
-                                    : "Origin evidence requires validation"}
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              loadBuyers(market)
-                            }
-                            disabled={buyerLoading}
-                            className="inline-flex w-full items-center justify-center rounded-xl border border-blue-500/25 bg-blue-500/8 px-4 py-3 text-sm font-semibold text-blue-300 transition hover:border-blue-500/40 hover:bg-blue-500/14 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
-                          >
-                            {buyerLoading &&
-                            selectedMarket?.countryCode ===
-                              market.countryCode
-                              ? "Investigating..."
-                              : "Investigate buyers →"}
-                          </button>
-                        </div>
-
-                        <details className="rounded-2xl border border-white/5 bg-[#080d17] p-4">
-                          <summary className="cursor-pointer list-none text-xs font-semibold text-slate-400">
-                            View evidence details
-                          </summary>
-
-                          <div className="mt-4 space-y-3">
-                            {market.intelligence.evidence.map(
-                              (item) => (
-                                <div
-                                  key={item.key}
-                                  className="flex items-start justify-between gap-4 text-xs"
-                                >
-                                  <div className="min-w-0">
-                                    <p className="text-slate-500">
-                                      {item.label}
-                                    </p>
-                                    {item.note && (
-                                      <p className="mt-1 text-[11px] leading-5 text-slate-600">
-                                        {item.note}
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  <div className="shrink-0 text-right">
-                                    <p className="font-medium text-slate-200">
-                                      {item.value}
-                                    </p>
-                                    <p className="mt-1 text-[10px] uppercase tracking-wider text-slate-600">
-                                      {item.status}
-                                    </p>
-                                  </div>
-                                </div>
-                              )
-                            )}
-                          </div>
-                        </details>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-
-            {screening && (
-              <details
-                id="methodology"
-                className="mt-8 rounded-3xl border border-white/6 bg-white/[0.02] p-5 sm:p-6"
-              >
-                <summary className="cursor-pointer list-none text-sm font-semibold text-slate-300">
-                  How the screening works
-                </summary>
-
-                <div className="mt-4 grid gap-4 lg:grid-cols-3">
-                  <ExplainCard
-                    number="01"
-                    title="Screen"
-                    text="Global import demand and year-over-year growth are checked before origin-specific validation."
-                  />
-
-                  <ExplainCard
-                    number="02"
-                    title="Validate"
-                    text="Only screened candidates move into origin-specific evidence checks where the source supports them."
-                  />
-
-                  <ExplainCard
-                    number="03"
-                    title="Act"
-                    text="The result shows what supports the signal, what is missing, and what should be validated next."
-                  />
-                </div>
-
-                <p className="mt-5 text-xs leading-5 text-slate-600">
-                  {screening.methodology}
-                </p>
-              </details>
-            )}
-
-            <section
-              id="buyer-intelligence"
-              className="scroll-mt-24 mt-12 rounded-[30px] border border-white/7 bg-white/[0.025] p-6 sm:p-8"
-            >
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-300">
-                      Buyer Intelligence
-                    </span>
-
-                    <span className="rounded-full border border-blue-500/15 bg-blue-500/8 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-blue-300">
-                      Evidence layer
-                    </span>
-                  </div>
-
-                  <h3 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
-                    Turn a market signal into buyer research.
-                  </h3>
-
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-                    Select a market to investigate companies.
-                    Automated buyer data is provider-dependent;
-                    manual research never gets presented as verified
-                    buyer evidence.
-                  </p>
-                </div>
-
-                {selectedMarket && (
-                  <div className="rounded-2xl border border-white/7 bg-[#080d17] px-4 py-3">
-                    <div className="text-[10px] uppercase tracking-wider text-slate-600">
-                      Selected market
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-white">
-                      {selectedMarket.country}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {!selectedMarket && !buyerLoading && (
-                <EmptyState
-                  title="Choose a market above"
-                  text="Use “Investigate buyers” on any market to start the next evidence step."
-                />
-              )}
-
-              {buyerLoading && (
-                <div
-                  role="status"
-                  className="mt-7 rounded-3xl border border-blue-500/15 bg-blue-500/6 p-8 text-center"
-                >
-                  <div className="mx-auto h-10 w-10 animate-pulse rounded-2xl bg-blue-500/15" />
-                  <p className="mt-4 text-sm font-medium text-blue-300">
-                    Investigating buyer evidence...
-                  </p>
-                  <p className="mt-2 text-xs text-slate-600">
-                    Checking the configured provider and preparing the
-                    evidence layer.
-                  </p>
-                </div>
-              )}
-
-              {!buyerLoading && buyerError && selectedMarket && (
-                <div className="mt-7 space-y-5">
-                  <div className="rounded-3xl border border-amber-500/15 bg-amber-500/6 p-5">
-                    <p className="text-sm font-semibold text-amber-300">
-                      Live buyer data unavailable
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-slate-400">
-                      {buyerError}
-                    </p>
-                  </div>
-
-                  <div className="rounded-3xl border border-blue-500/15 bg-blue-500/6 p-6">
-                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-300">
-                          Free Research Mode
-                        </div>
-
-                        <h4 className="mt-3 text-xl font-bold">
-                          Continue research without a paid buyer API.
-                        </h4>
-
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                          We do not invent buyer records when a live provider
-                          is unavailable. Instead, use the generated research
-                          brief to find and verify real companies manually.
-                        </p>
-                      </div>
-
-                      {selectedMarket.countryCode ===
-                        840 && (
-                        <a
-                          href="https://www.importyeti.com/"
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="inline-flex shrink-0 items-center justify-center rounded-xl border border-blue-500/25 bg-blue-500/8 px-4 py-3 text-sm font-semibold text-blue-300 transition hover:bg-blue-500/14"
-                        >
-                          Open ImportYeti →
-                        </a>
-                      )}
-                    </div>
-
-                    <div className="mt-6 rounded-2xl border border-white/7 bg-[#080d17] p-5">
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                        Research brief
-                      </div>
-
-                      <p className="mt-3 break-words text-sm leading-6 text-slate-200">
-                        {getResearchQuery(
-                          selectedMarket
-                        )}
-                      </p>
-
-                      <div className="mt-5 flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            copyResearchQuery(
-                              selectedMarket
-                            )
-                          }
-                          className="rounded-xl border border-white/8 bg-white/[0.025] px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.05]"
-                        >
-                          {researchCopied
-                            ? "Copied ✓"
-                            : "Copy research query"}
-                        </button>
-
-                        <a
-                          href={getResearchUrl(
-                            selectedMarket
-                          )}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="rounded-xl border border-blue-500/25 bg-blue-500/8 px-4 py-2.5 text-sm font-semibold text-blue-300 transition hover:bg-blue-500/14"
-                        >
-                          Open web research →
-                        </a>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-3 md:grid-cols-3">
-                      <ResearchStep
-                        number="01"
-                        title="Find"
-                        text="Locate importers, distributors, and relevant companies in the selected market."
-                      />
-
-                      <ResearchStep
-                        number="02"
-                        title="Verify"
-                        text="Check company identity, product relevance, activity, and recency before trusting the lead."
-                      />
-
-                      <ResearchStep
-                        number="03"
-                        title="Record"
-                        text="Only promote a company toward outreach after the supporting evidence is independently checked."
-                      />
-                    </div>
-
-                    {selectedMarket.countryCode !==
-                      840 && (
-                      <p className="mt-5 text-xs leading-5 text-slate-600">
-                        ImportYeti&apos;s free search is focused on US import
-                        data. For other markets, use the provider-agnostic
-                        research workflow above.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {!buyerLoading &&
-                !buyerError &&
-                selectedMarket &&
-                buyerSummary && (
-                  <div className="mt-7">
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                      <Metric
-                        label="Buyers found"
-                        value={String(
-                          buyerSummary.total
-                        )}
-                        detail="Provider result"
-                      />
-
-                      <Metric
-                        label="Strong signal"
-                        value={String(
-                          buyerSummary.highSignal
-                        )}
-                        detail="Evidence-rich"
-                      />
-
-                      <Metric
-                        label="Verified"
-                        value={String(
-                          buyerSummary.verified
-                        )}
-                        detail="Verification threshold"
-                      />
-
-                      <Metric
-                        label="Needs verification"
-                        value={String(
-                          buyerSummary.partiallyVerified
-                        )}
-                        detail="Still requires review"
-                      />
-                    </div>
-
-                    {buyerProvider === "mock" && (
-                      <div className="mt-5 rounded-2xl border border-amber-500/15 bg-amber-500/6 p-4">
-                        <p className="text-xs font-semibold text-amber-300">
-                          Development test data
-                        </p>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">
-                          These records are for product testing only and are
-                          not live buyer evidence.
-                        </p>
-                      </div>
-                    )}
-
-                    {buyers.length > 0 ? (
-                      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                        {buyers.map((item) => (
-                          <article
-                            key={item.buyer.id}
-                            className="rounded-3xl border border-white/7 bg-[#080d17] p-5"
-                          >
-                            <div className="flex items-start justify-between gap-4">
+                        return (
+                          <details className="ecc-market-details"><summary>Decision details<span>View details</span></summary><div className="mt-4 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.025] p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
-                                <h4 className="font-semibold text-white">
-                                  {item.buyer.companyName}
-                                </h4>
-
-                                <p className="mt-1 text-xs text-slate-600">
-                                  {item.buyer.country ??
-                                    "Unknown country"}
-                                </p>
+                                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">
+                                  Decision diagnostic
+                                </div>
+                                <div className="mt-1 text-xs text-white/30">
+                                  Separating opportunity from certainty.
+                                </div>
                               </div>
 
-                              <span className="rounded-full border border-white/7 bg-white/[0.02] px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                                {item.intelligence.signal ===
-                                "high-signal"
-                                  ? "Strong evidence"
-                                  : item.intelligence
-                                          .signal ===
-                                      "medium-signal"
-                                    ? "Moderate evidence"
-                                    : item.intelligence
-                                            .signal ===
-                                        "low-signal"
-                                      ? "Limited evidence"
-                                      : "Insufficient evidence"}
-                              </span>
+                              <div className="flex flex-wrap gap-2">
+                                <Badge tone="cyan">
+                                  Priority {decision.priority}
+                                </Badge>
+                                <Badge tone={
+                                  decision.confidenceLabel === "High"
+                                    ? "emerald"
+                                    : decision.confidenceLabel === "Medium"
+                                      ? "cyan"
+                                      : "amber"
+                                }>
+                                  Confidence {decision.confidenceLabel}
+                                </Badge>
+                              </div>
                             </div>
 
-                            <div className="mt-5 grid grid-cols-2 gap-3">
-                              <StatCard
-                                label="Matched shipments"
-                                value={
-                                  item.buyer
-                                    .matchingShipments ??
-                                  "—"
-                                }
-                                detail="Product-specific"
-                              />
+                            <div className="mt-4 grid gap-4 md:grid-cols-2">
+                              <div>
+                                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                                  Critical unknowns
+                                </div>
+                                <div className="mt-2 space-y-1.5">
+                                  {(decision.unknowns ?? []).map((item) => (
+                                    <div key={item} className="flex gap-2 text-xs leading-5 text-white/45">
+                                      <span className="text-amber-300/70">!</span>
+                                      <span>{item}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
 
-                              <StatCard
-                                label="Evidence strength"
-                                value={`${item.evidence.score}/100`}
-                                detail={item.evidence.status}
-                              />
-
-                              <StatCard
-                                label="Verification"
-                                value={
-                                  item.verification
-                                      .status ===
-                                    "verified"
-                                      ? "Verified"
-                                      : item.verification
-                                            .status ===
-                                          "partially-verified"
-                                        ? "Partial"
-                                        : "Unverified"
-                                }
-                                detail="Signal status"
-                              />
-
-                              <StatCard
-                                label="Workflow"
-                                value={
-                                  item.readiness ===
-                                  "outreach-ready"
-                                    ? "Outreach review"
-                                    : item.readiness ===
-                                        "needs-verification"
-                                      ? "Verify first"
-                                      : "Research"
-                                }
-                                detail="Next stage"
-                              />
-                            </div>
-
-                            {item.evidence
-                                .limitations.length >
-                              0 && (
-                              <div className="mt-5 rounded-2xl border border-amber-500/15 bg-amber-500/6 p-4">
-                                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-300">
-                                  Evidence gaps
-                                </p>
-
-                                <div className="mt-2 space-y-1">
-                                  {item.evidence.limitations.map(
-                                    (limitation) => (
-                                      <p
-                                        key={limitation}
-                                        className="text-xs leading-5 text-slate-400"
-                                      >
-                                        {limitation}
-                                      </p>
-                                    )
+                              <div>
+                                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                                  Counter-signals
+                                </div>
+                                <div className="mt-2 space-y-1.5">
+                                  {(decision.counterSignals ?? []).length ? (
+                                    (decision.counterSignals ?? []).map((item) => (
+                                      <div key={item} className="flex gap-2 text-xs leading-5 text-white/45">
+                                        <span className="text-rose-300/70">↘</span>
+                                        <span>{item}</span>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div className="text-xs leading-5 text-white/30">
+                                      No strong negative signal found in the current dataset.
+                                    </div>
                                   )}
                                 </div>
                               </div>
-                            )}
-
-                            <div className="mt-5 border-t border-white/6 pt-4">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                                Evidence → action
-                              </p>
-
-                              <p className="mt-2 text-sm leading-6 text-slate-300">
-                                {item.intelligence
-                                  .nextAction}
-                              </p>
                             </div>
 
-                            {item.buyer.companyLink && (
-                              <a
-                                href={
-                                  item.buyer.companyLink
-                                }
-                                target="_blank"
-                                rel="noreferrer noopener"
-                                className="mt-5 inline-flex text-sm font-semibold text-blue-300 transition hover:text-blue-200"
+                            <div className="mt-4 border-t border-white/6 pt-3">
+                              <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                                Next best action
+                              </div>
+                              <div className="mt-1 text-xs leading-5 text-cyan-100/65">
+                                {decision.nextAction}
+                              </div>
+                            </div>
+                          </div></details>
+                        );
+                      })()}
+
+                    <div className="mt-4 rounded-2xl border border-white/7 bg-black/15 p-4"><div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/20">Why it surfaced</div><p className="mt-2 text-sm leading-6 text-white/55">{market.opportunity?.rationale || market.intelligence?.nextAction || "The current data supports a closer validation pass."}</p></div>
+
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2"><Evidence label="Trade record" value={market.isReported === true ? "Reported" : market.isReported === false ? "Not reported" : "Not specified"} note={`Quantity ${market.quantity == null ? "Unavailable" : `${num(market.quantity)} ${market.quantityUnit || ""}${market.isQuantityEstimated ? " · estimated" : ""}`}`} /><Evidence label="Origin evidence" value={market.originExportStatus === "recorded" ? "Recorded" : market.originExportStatus === "no_record" ? "No bilateral record" : market.originExportStatus === "unavailable" ? "Unavailable" : "Not confirmed"} note="Missing data is not treated as zero trade." /></div>
+
+                    <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 border-t border-white/6 pt-4 text-xs text-white/40"><Dot good={market.evidence?.demand !== false} label="Demand" /><Dot good={market.evidence?.growth !== false} label="Growth" /><Dot good={market.originExportStatus === "recorded"} label="Origin" /><Dot good={false} label="Buyer" /></div>
+
+                    {market.intelligence?.evidenceBreakdown ? (
+                      <details className="ecc-market-details mt-5 rounded-2xl border border-white/7 bg-black/15 p-4">
+                        <summary className="cursor-pointer list-none">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/25">
+                                Evidence details
+                              </div>
+                              <div className="mt-1 text-xs text-white/35">
+                                Why this evidence score has its current strength
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-sm font-semibold text-cyan-100/75">
+                              {Math.round(market.intelligence.evidenceScore ?? 0)}/100
+                            </div>
+                          </div>
+                        </summary>
+
+                        <div className="mt-4 space-y-3">
+                          {(
+                            [
+                              ["Demand evidence", market.intelligence.evidenceBreakdown.demand],
+                              ["Growth evidence", market.intelligence.evidenceBreakdown.growth],
+                              ["Data quality", market.intelligence.evidenceBreakdown.dataQuality],
+                              ["Origin evidence", market.intelligence.evidenceBreakdown.origin],
+                              ["Data coverage", market.intelligence.evidenceBreakdown.coverage],
+                            ] as [string, EvidenceBreakdownItem | undefined][]
+                          ).map(([label, item]) => {
+                            if (!item) return null;
+
+                            const percentage =
+                              item.maxPoints > 0
+                                ? Math.round((item.points / item.maxPoints) * 100)
+                                : 0;
+
+                            return (
+                              <div
+                                key={String(label)}
+                                className="rounded-xl border border-white/6 bg-white/[0.018] p-3"
                               >
-                                Open company record →
-                              </a>
-                            )}
-                          </article>
-                        ))}
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="text-xs font-medium text-white/65">
+                                    {label}
+                                  </div>
+                                  <div className="text-xs font-semibold text-white/55">
+                                    {item.points}/{item.maxPoints}
+                                  </div>
+                                </div>
+
+                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/6">
+                                  <div
+                                    className="h-full rounded-full bg-cyan-300/55"
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+
+                                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-white/28">
+                                  <span>{item.status}</span>
+                                  <span>·</span>
+                                  <span>{item.source}</span>
+                                </div>
+
+                                <p className="mt-1.5 text-[11px] leading-5 text-white/32">
+                                  {item.note}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <p className="mt-4 border-t border-white/6 pt-3 text-[10px] leading-5 text-white/25">
+                          Evidence Strength measures evidence coverage and confidence.
+                          It does not measure market attractiveness.
+                        </p>
+                      </details>
+                    ) : null}
+
+                    <button onClick={() => investigate(market)} className="mt-6 w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-[#061016] hover:bg-cyan-50">Investigate buyers ↗</button>
+                  </article>
+                );
+              })}
+            </div>
+          ) : searched ? <div className="mt-8 rounded-[28px] border border-white/8 bg-white/[0.02] p-8 text-center"><div className="text-sm font-medium">No usable market candidates yet.</div><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-white/35">Try another year, a broader HS code, or a more specific product classification.</p></div> : <div className="mt-8 rounded-[28px] border border-dashed border-white/8 bg-white/[0.015] p-8 text-center text-sm text-white/30">Run a scan above to populate evidence-backed market candidates.</div>}
+
+          {searched && markets.length ? <div className="mt-8 grid gap-4 lg:grid-cols-[1.1fr_.9fr]"><div className="rounded-[28px] border border-cyan-300/10 bg-cyan-300/[0.035] p-5 md:p-6"><div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-cyan-200/70">Decision engine</div><div className="mt-3 text-2xl font-semibold tracking-tight">Start validation with {nameOf(rankedMarkets[0])}.</div><p className="mt-3 max-w-2xl text-sm leading-7 text-white/45">{rankedMarkets[0].intelligence?.nextAction || "Validate buyer access and market-entry conditions before outreach."}</p><div className="mt-5 flex flex-wrap gap-2"><Badge tone="cyan">Relative demand {Math.round(rankedMarkets[0].demandScore ?? rankedMarkets[0].score ?? 0)}/100</Badge><Badge tone={rankedMarkets[0].intelligence?.evidenceStatus === "strong" ? "emerald" : "amber"}>{rankedMarkets[0].intelligence?.evidenceLabel || "Evidence"} evidence</Badge><Badge tone="slate">Source: UN Comtrade</Badge></div></div><div className="rounded-[28px] border border-white/8 bg-white/[0.02] p-5 md:p-6"><div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/20">What is still missing</div><div className="mt-4 space-y-2 text-sm text-white/45"><div className="flex items-center gap-3"><span className="h-1.5 w-1.5 rounded-full bg-amber-300" /> Buyer/company evidence</div><div className="flex items-center gap-3"><span className="h-1.5 w-1.5 rounded-full bg-amber-300" /> Market-access verification</div><div className="flex items-center gap-3"><span className="h-1.5 w-1.5 rounded-full bg-amber-300" /> Supplier-side commercial fit</div></div></div></div> : null}
+
+          {screening?.methodology ? <details id="evidence" className="mt-8 rounded-[28px] border border-white/8 bg-white/[0.02] p-5 md:p-6"><summary className="cursor-pointer list-none text-sm font-medium text-white/70">How the signal is built</summary><div className="mt-5 grid gap-4 md:grid-cols-3"><Method title="Relative demand" body="Compares this market’s import value with the other markets returned in the same scan. It is not an absolute demand probability or percentage." /><Method title="Growth" body="Year-over-year movement shows whether demand is expanding or contracting." /><Method title="Origin" body="Origin-specific evidence is checked separately; unavailable data is never treated as zero." /></div><p className="mt-5 border-t border-white/6 pt-4 text-xs leading-6 text-white/22">{screening.methodology}</p></details> : null}
+        </div>
+      </section>
+
+
+      <section id="decision-workspace" className="scroll-mt-24 border-b border-white/[0.07]">
+        <div className="mx-auto max-w-7xl px-5 py-14 md:px-8 md:py-20">
+          <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">
+                Decision workspace
+              </div>
+
+              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">
+                Research Plan
+              </h2>
+
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/38">
+                The system chooses the next research step by decision impact and uncertainty,
+                instead of showing the same checklist for every market.
+              </p>
+            </div>
+
+            {selectedMarket ? (
+              <div className="rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.04] px-4 py-3">
+                <div className="text-[9px] uppercase tracking-[0.16em] text-cyan-200/45">
+                  Focus market
+                </div>
+                <div className="mt-1 text-sm font-medium text-white/80">
+                  {selectedName}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {!selectedMarket ? (
+            <div className="mt-8 rounded-[28px] border border-dashed border-white/8 bg-white/[0.015] p-8 text-center">
+              <div className="text-sm font-medium text-white/65">
+                Select a market to generate its research sequence.
+              </div>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/30">
+                Research priorities become specific only after the system knows which market
+                you are investigating.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-8 grid gap-4">
+              {(selectedMarket.researchPlan ?? []).map((task, index) => (
+                <article
+                  key={task.id}
+                  className="rounded-[24px] border border-white/[0.08] bg-white/[0.025] p-5 md:p-6"
+                >
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-cyan-300/10 text-xs font-semibold text-cyan-200">
+                          {String(index + 1).padStart(2, "0")}
+                        </div>
+
+                        <h3 className="text-base font-medium text-white/85">
+                          {task.title}
+                        </h3>
+
+                        <span
+                          className={`rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${
+                            task.priority === "HIGH"
+                              ? "border-rose-300/15 bg-rose-300/[0.05] text-rose-200"
+                              : task.priority === "MEDIUM"
+                                ? "border-amber-300/15 bg-amber-300/[0.05] text-amber-200"
+                                : "border-white/8 bg-white/[0.03] text-white/35"
+                          }`}
+                        >
+                          {task.priority}
+                        </span>
                       </div>
-                    ) : (
-                      <EmptyState
-                        title="No buyer records returned"
-                        text="The configured provider returned no company records for this market."
-                      />
-                    )}
+
+                      <p className="mt-4 max-w-3xl text-sm leading-7 text-white/40">
+                        {task.why}
+                      </p>
+
+                      <div className="mt-4 rounded-2xl border border-white/7 bg-black/15 p-4">
+                        <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/20">
+                          Recommended action
+                        </div>
+
+                        <p className="mt-2 text-sm leading-7 text-white/65">
+                          {task.action}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid shrink-0 grid-cols-2 gap-2 lg:w-44">
+                      <div className="rounded-2xl border border-white/7 bg-black/10 p-3 text-center">
+                        <div className="text-[9px] uppercase tracking-[0.14em] text-white/20">
+                          Impact
+                        </div>
+                        <div className="mt-2 text-sm font-medium text-white/75">
+                          {task.impact}/100
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/7 bg-black/10 p-3 text-center">
+                        <div className="text-[9px] uppercase tracking-[0.14em] text-white/20">
+                          Research cost
+                        </div>
+                        <div className="mt-2 text-sm font-medium text-white/75">
+                          {task.cost}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
-            </section>
+                </article>
+              ))}
 
-            <div className="mt-6 rounded-3xl border border-white/6 bg-white/[0.018] p-5">
-              <p className="text-xs font-semibold text-slate-500">
-                Current MVP boundary
-              </p>
-
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Market intelligence is based on real UN Comtrade trade data.
-                Buyer discovery is provider-dependent, with a free manual
-                research fallback. Competition, pricing, logistics, market
-                access, and final commercial viability are deliberately not
-                inferred from import volume alone.
-              </p>
+              <div className="rounded-2xl border border-dashed border-white/8 bg-black/10 px-4 py-3 text-xs leading-6 text-white/28">
+                Decision rule: resolve the cheapest high-impact uncertainty first.
+                Do not escalate to outreach while a critical validation gap remains.
+              </div>
             </div>
-          </div>
-        </section>
-      )}
-
-      <section className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
-        <div className="max-w-3xl">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-300">
-            Product Engine
-          </div>
-
-          <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
-            From market discovery to the next sales action.
-          </h2>
-
-          <p className="mt-4 text-base leading-7 text-slate-500">
-            The product is intentionally built around a chain of evidence,
-            not a black-box score: discover, validate, then act.
-          </p>
-        </div>
-
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          <Feature
-            number="01"
-            title="Market Intelligence"
-            text="Measure real import demand, growth, and data quality across international markets."
-          />
-
-          <Feature
-            number="02"
-            title="Buyer Intelligence"
-            text="Connect market demand to companies that can be independently investigated and verified."
-          />
-
-          <Feature
-            number="03"
-            title="Opportunity Engine"
-            text="Expose the signal, the missing evidence, and the next validation action instead of hiding the reasoning."
-          />
+          )}
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-5 pb-20 sm:px-8">
-        <div className="rounded-[30px] border border-blue-500/10 bg-gradient-to-br from-blue-950/35 via-blue-950/10 to-transparent p-7 sm:p-10">
-          <div className="max-w-3xl">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-300">
-              Core principle
+      
+      <section id="pro" className="mx-auto mt-16 w-full max-w-7xl px-4 sm:px-6">
+<div className="mb-6 flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.025] p-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-cyan-300/15 bg-cyan-300/8 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">
+              Pro Mode
+            </span>
+            <span className="text-[10px] uppercase tracking-[0.12em] text-white/20">
+              Decision layer
+            </span>
+          </div>
+          <div className="mt-2 text-sm font-medium text-white/70">
+            Turn evidence-backed market signals into a commercial validation pack.
+          </div>
+          <div className="mt-1 text-xs text-white/30">
+            Preview deeper evidence workflows, buyer research, market-access checks, and monitoring without inventing unsupported data.
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setProMode((value) => !value)}
+          className="rounded-xl border border-cyan-300/15 bg-cyan-300/8 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100 transition hover:bg-cyan-300/12"
+        >
+          {proMode ? "Pro Mode On" : "Preview Pro intelligence"}
+        </button>
+      </div>
+      </section>
+
+      {/* ECC_FINAL_INTELLIGENCE_V1 */}
+      <section id="decision-intelligence" className="scroll-mt-24 border-y border-white/[0.06] bg-[#060b10]">
+        <div className="mx-auto max-w-7xl px-5 py-16 md:px-8 md:py-20">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">03 / Trust & commercial readiness</div>
+              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.035em] text-white md:text-4xl">What the current evidence can—and cannot—support.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/40">This layer keeps the market signal separate from the claims that still require origin, buyer and market-access verification.</p>
             </div>
+            {focusMarket ? <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5 text-[10px] uppercase tracking-[0.15em] text-white/35">Focus: {nameOf(focusMarket)}</div> : null}
+          </div>
 
-            <h2 className="mt-4 text-3xl font-bold tracking-tight">
-              No evidence → no evidence strength.
-            </h2>
+          {focusMarket ? (
+            <div className="mt-8 grid gap-4 lg:grid-cols-3">
+              <article className="rounded-[24px] border border-white/[0.08] bg-white/[0.025] p-5">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">Data trust</div>
+                <div className="mt-3 text-lg font-semibold text-white">{focusMarket.dataTrust?.truth === "reported" ? "Reported trade signal" : focusMarket.dataTrust?.truth === "estimated" ? "Estimated signal" : focusMarket.dataTrust?.truth === "not-reported" ? "Non-reported record" : "Mixed / unresolved"}</div>
+                <div className="mt-2 text-xs leading-5 text-white/35">{focusMarket.dataTrust?.source || "UN Comtrade"} · period {focusMarket.dataTrust?.period ?? "—"}</div>
+                <div className="mt-4 rounded-2xl border border-white/7 bg-black/15 p-4 text-xs leading-5 text-white/45">{focusMarket.dataTrust?.retrievalLabel || "Retrieval metadata unavailable"}. Coverage: {focusMarket.dataTrust?.coverage || "unknown"}.</div>
+                {focusMarket.dataTrust?.limitations?.length ? <div className="mt-4 space-y-2">{focusMarket.dataTrust.limitations.slice(0, 3).map((item: string) => <div key={item} className="text-xs leading-5 text-white/30">• {item}</div>)}</div> : null}
+              </article>
 
-            <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
-              A useful export signal should always answer three things:
-              what happened, how strong the evidence is, and what should be
-              validated next.
-            </p>
+              <article className="rounded-[24px] border border-white/[0.08] bg-white/[0.025] p-5">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">Market access</div>
+                <div className="mt-3 text-lg font-semibold text-white">{focusMarket.marketAccess?.status === "partially-verified" ? "Provider-backed verification" : "Verification required"}</div>
+                <div className="mt-2 text-xs leading-5 text-white/35">{focusMarket.marketAccess?.provider || "No access provider connected"}</div>
+                <div className="mt-4 rounded-2xl border border-amber-300/10 bg-amber-300/[0.025] p-4 text-xs leading-5 text-amber-100/55">{focusMarket.marketAccess?.coverage || "No market-access claim is asserted."}</div>
+                <div className="mt-4 text-xs leading-5 text-white/40">Next: {focusMarket.marketAccess?.nextStep || "Verify tariffs, taxes, requirements and rules of origin."}</div>
+              </article>
 
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              <Principle
-                title="Evidence"
-                text="What happened?"
-              />
-              <Principle
-                title="Strength"
-                text="How reliable is it?"
-              />
-              <Principle
-                title="Action"
-                text="What should happen next?"
-              />
+              <article className="rounded-[24px] border border-white/[0.08] bg-white/[0.025] p-5">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">Commercial readiness</div>
+                <div className="mt-3 text-lg font-semibold text-white">{focusMarket.commercialReadiness?.label || "Market validation"}</div>
+                <div className="mt-2 text-xs leading-5 text-white/35">Stage: {focusMarket.commercialReadiness?.stage || "market-screened"}</div>
+                <div className="mt-4 rounded-2xl border border-white/7 bg-black/15 p-4 text-xs leading-5 text-white/45">{focusMarket.commercialReadiness?.nextStep || "Continue validation before commercial scaling."}</div>
+                {focusMarket.commercialReadiness?.blockers?.length ? <div className="mt-4 space-y-2">{focusMarket.commercialReadiness.blockers.slice(0, 3).map((item: string) => <div key={item} className="text-xs leading-5 text-white/30">• {item}</div>)}</div> : null}
+              </article>
+            </div>
+          ) : (
+            <div className="mt-8 rounded-[24px] border border-white/8 bg-white/[0.02] p-6 text-sm text-white/35">Run a market scan to populate the trust and commercial-readiness workspace.</div>
+          )}
+
+          <div className="mt-6 rounded-[24px] border border-cyan-300/10 bg-cyan-300/[0.02] p-5">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">Monitoring</div>
+                <div className="mt-2 text-sm font-medium text-white/80">{monitoringChange?.hasBaseline ? (monitoringChange.changedMarkets.length || monitoringChange.newMarkets.length || monitoringChange.removedMarkets.length ? "Change detected since the previous scan." : "No material change detected since the previous scan.") : "Baseline will be created from your first completed scan."}</div>
+                <div className="mt-1 text-xs leading-5 text-white/30">This zero-cost demo keeps the last scan locally in your browser; it does not claim server-side live monitoring.</div>
+              </div>
+              {monitoringChange?.hasBaseline ? <div className="text-xs text-white/45">{monitoringChange.changedMarkets.length} changed · {monitoringChange.newMarkets.length} new · {monitoringChange.removedMarkets.length} removed</div> : null}
+            </div>
+            {monitoringChange?.changedMarkets?.length ? <div className="mt-4 grid gap-2 md:grid-cols-3">{monitoringChange.changedMarkets.slice(0, 3).map((item: { name: string; importDeltaPct: number | null; growthDeltaPts: number | null; priorityDelta?: number | null }) => <div key={item.name} className="rounded-xl border border-white/7 bg-black/10 p-3 text-xs text-white/50"><span className="text-white/75">{item.name}</span>{item.importDeltaPct != null ? <span> · import {item.importDeltaPct > 0 ? "+" : ""}{item.importDeltaPct}%</span> : null}{item.growthDeltaPts != null ? <span> · growth {item.growthDeltaPts > 0 ? "+" : ""}{item.growthDeltaPts} pts</span> : null}</div>)}</div> : null}
+          </div>
+        </div>
+      </section>
+
+<section id="buyers" className="scroll-mt-24">
+        <div className="mx-auto max-w-7xl px-5 py-14 md:px-8 md:py-20">
+          <div className="grid gap-8 lg:grid-cols-[.82fr_1.18fr]">
+            <div><div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">02 / Buyer intelligence</div><h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">From market signal to buyer research.</h2><p className="mt-4 max-w-lg text-sm leading-7 text-white/38">Buyer evidence is a separate layer. Free mode keeps discovery and verification distinct without inventing company records.</p>{selectedMarket ? <div className="mt-6 rounded-2xl border border-white/8 bg-white/[0.025] p-4"><div className="text-[9px] uppercase tracking-[0.16em] text-white/20">Selected market</div><div className="mt-2 text-sm text-white/75">{selectedName}</div><div className="mt-1 text-xs text-white/25">{product} · HS {hsCode}</div></div> : null}</div>
+
+            <div className="rounded-[28px] border border-white/8 bg-white/[0.02] p-5 md:p-6"><div className="flex items-center justify-between gap-4"><div><div className="text-sm font-medium text-white/85">Research workflow</div><div className="mt-1 text-xs text-white/25">Find → Verify → Record</div></div><span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[9px] uppercase tracking-[0.14em] text-white/25">No fake buyers</span></div>
+
+              <div className="mt-5 rounded-2xl border border-white/7 bg-black/15 p-4"><div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/20">Targeted research query</div><div className="mt-2 break-words text-sm leading-6 text-white/55">{researchQuery || "Select a market to generate a targeted research query."}</div><div className="mt-4 flex flex-col gap-2 sm:flex-row"><button onClick={copyQuery} disabled={!researchQuery} className="rounded-xl border border-white/9 bg-white/[0.03] px-3 py-2 text-xs text-white/55 disabled:opacity-30">{copied ? "Copied ✓" : "Copy query"}</button><a href={researchUrl} target="_blank" rel="noreferrer" className={`rounded-xl bg-white px-3 py-2 text-center text-xs font-semibold text-[#061016] ${researchQuery ? "" : "pointer-events-none opacity-30"}`}>Open web research ↗</a></div></div>
+
+              {buyerLoading ? <div className="mt-5 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.05] p-5 text-sm text-cyan-100">Searching the configured buyer layer...</div> : null}
+              {buyerError ? <div className="mt-5 rounded-2xl border border-amber-300/10 bg-amber-300/[0.05] p-5 text-sm text-amber-100">{buyerError}</div> : null}
+
+              {buyers.length ? <div className="mt-5 space-y-3">{buyers.map((buyer, index) => <div key={`${buyer.company || buyer.name || "buyer"}-${index}`} className="rounded-2xl border border-white/7 bg-black/10 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="text-sm font-medium text-white/85">{buyer.company || buyer.name || "Unnamed company"}</div><div className="mt-1 text-xs text-white/25">{buyer.country || selectedName}</div></div><Badge tone={buyer.verification?.status === "verified" ? "emerald" : "amber"}>{buyer.verification?.label || buyer.verification?.status || "Needs verification"}</Badge></div><div className="mt-3 grid gap-2 sm:grid-cols-3"><Evidence label="Signal" value={buyer.intelligence?.label || buyer.intelligence?.signal || "Research"} /><Evidence label="Shipments" value={num(buyer.matchedShipments)} /><Evidence
+  label="Readiness"
+  value={
+    buyer.readiness === "action-candidate"
+      ? "Action candidate"
+      : buyer.readiness === "needs-verification"
+        ? "Needs verification"
+        : buyer.readiness === "research"
+          ? "Research"
+          : "—"
+  }
+/></div>{buyer.evidence ? <p className="mt-3 text-xs leading-5 text-white/35">{buyer.evidence}</p> : null}</div>)}</div> : buyerResearch ? <div className="mt-5 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.035] p-4"><div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/65">Free buyer research mode</div><div className="mt-2 text-sm text-white/70">No paid company database is being used. The workflow gives you targeted searches you can verify yourself.</div><div className="mt-4 space-y-2">{(buyerResearch.links || []).map((link) => <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-xl border border-white/8 bg-black/10 px-3 py-2.5 text-xs text-white/55 hover:border-cyan-300/15 hover:text-cyan-100"><span>{link.label}</span><span>↗</span></a>)}</div><div className="mt-4 rounded-xl border border-white/7 bg-black/10 p-3 text-[10px] leading-5 text-white/30">{buyerResearch.note || "Verify every company before outreach and keep the source attached to your research record."}</div></div> : <div className="mt-5 grid gap-3 md:grid-cols-3">{[["01", "Find companies"], ["02", "Verify relevance"], ["03", "Record evidence"]].map(([n, title]) => <div key={n} className="rounded-2xl border border-white/7 bg-black/10 p-4"><div className="text-[9px] text-cyan-200/65">{n}</div><div className="mt-2 text-sm text-white/70">{title}</div><div className="mt-1 text-xs leading-5 text-white/25">Use evidence before outreach.</div></div>)}</div>}
+
+              {buyerProvider ? <div className="mt-5 text-[10px] uppercase tracking-[0.14em] text-white/18">Layer: {typeof buyerProvider === "string" ? buyerProvider : buyerProvider.source || buyerProvider.mode || "research"}</div> : null}
             </div>
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-white/6">
-        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <span>Export Command Center</span>
-          <span>Evidence-driven export intelligence</span>
-        </div>
-      </footer>
-    </main>
+      <footer className="border-t border-white/[0.07]"><div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-[10px] uppercase tracking-[0.14em] text-white/18 md:flex-row md:items-center md:justify-between md:px-8"><span>Export Command Center · evidence-driven market intelligence</span><span>Validate before you scale</span></div></footer>
+    
+      {proMode && rankedMarkets[0] && (() => {
+        const market = rankedMarkets[proMarketIndex] ?? rankedMarkets[0];
+        const pack = proPackFor(market, rankedMarkets);
+
+        return (
+          <section className="mb-10 rounded-3xl border border-cyan-300/12 bg-cyan-300/[0.025] p-5 md:p-6">
+            <div className="flex flex-col gap-4 border-b border-white/7 pb-5 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border border-cyan-300/15 bg-cyan-300/8 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">
+                    PRO DECISION PACK
+                  </span>
+                  <span className="text-[9px] uppercase tracking-[0.14em] text-white/20">
+                    Highest-ranked market
+                  </span>
+                </div>
+
+                <h2 className="mt-3 text-xl font-semibold text-white/85">
+                  {pack.marketName}
+                </h2>
+
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-white/35">
+                  A deeper commercial validation layer built from the evidence currently available.
+                  Validation priority is an action signal, not proof of a sale.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(
+                      proDecisionTextFor(market)
+                    );
+                    setProCopied(true);
+                    window.setTimeout(() => setProCopied(false), 1800);
+                  } catch {}
+                }}
+                className="shrink-0 rounded-xl border border-white/8 bg-white/[0.035] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.13em] text-white/55 transition hover:bg-white/[0.06] hover:text-white/75"
+              >
+                {proCopied ? "Copied" : "Copy Decision Pack"}
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-white/6 bg-black/15 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                    Focus market
+                  </div>
+                  <div className="mt-1 text-xs text-white/35">
+                    Choose the market the Pro decision pack should analyze.
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {rankedMarkets.slice(0, 5).map((item, index) => {
+                    const name =
+                      item.country ||
+                      item.marketName ||
+                      item.market ||
+                      `Market ${index + 1}`;
+
+                    const active = index === proMarketIndex;
+
+                    return (
+                      <button
+                        key={`${name}-${index}`}
+                        type="button"
+                        onClick={() => setProMarketIndex(index)}
+                        className={`rounded-xl border px-3 py-2 text-[10px] font-semibold transition ${
+                          active
+                            ? "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
+                            : "border-white/7 bg-white/[0.025] text-white/40 hover:bg-white/[0.05] hover:text-white/65"
+                        }`}
+                      >
+                        {name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-4">
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] uppercase tracking-[0.14em] text-white/20">
+                  Priority
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-white/80">
+                  {pack.priority}
+                  <span className="ml-1 text-xs text-white/20">/100</span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] uppercase tracking-[0.14em] text-white/20">
+                  Confidence
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-white/80">
+                  {pack.confidence}
+                  <span className="ml-2 text-xs text-cyan-200/45">
+                    {pack.confidenceLabel}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] uppercase tracking-[0.14em] text-white/20">
+                  Evidence
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-white/80">
+                  {pack.evidence}
+                  <span className="ml-1 text-xs text-white/20">/100</span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] uppercase tracking-[0.14em] text-white/20">
+                  Origin fit
+                </div>
+                <div className="mt-2 text-sm font-semibold text-white/65">
+                  {pack.originStatus}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-3">
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                  Evidence assessment
+                </div>
+                <p className="mt-2 text-sm leading-6 text-white/45">
+                  {pack.evidenceState}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                  Commercial readiness
+                </div>
+                <div className="mt-2 text-sm font-semibold text-white/70">
+                  {pack.commercialState}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-white/35">
+                  {pack.commercialReason}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                  Pro-only validation gaps
+                </div>
+                <div className="mt-2 space-y-2">
+                  {[
+                    "Qualified buyer evidence",
+                    "Market-access verification",
+                    "Competitive / origin comparison",
+                    "Supplier-side commercial fit",
+                  ].map((item) => (
+                    <div key={item} className="flex gap-2 text-xs leading-5 text-white/40">
+                      <span className="text-cyan-200/55">+</span>
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                  Evidence boundary
+                </div>
+                <p className="mt-2 text-sm leading-6 text-white/40">
+                  Buyer/company records and market-access claims stay unverified
+                  until a source or provider supports them.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                  Evidence ledger
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {[
+                    {
+                      label: "Demand",
+                      state: "Supported",
+                      detail: "Destination import demand",
+                    },
+                    {
+                      label: "Growth",
+                      state: (market.yoyGrowth ?? market.growth) != null ? "Supported" : "Missing",
+                      detail: "Recent market movement",
+                    },
+                    {
+                      label: "Origin fit",
+                      state:
+                        market.originExportStatus === "recorded"
+                          ? "Recorded"
+                          : market.originExportStatus === "no_record"
+                            ? "No record"
+                            : "Unavailable",
+                      detail: "Origin-specific evidence",
+                    },
+                    {
+                      label: "Buyer evidence",
+                      state: buyers.length ? "Available" : "Not verified",
+                      detail: buyerProvider
+                        ? "Configured buyer layer"
+                        : "No verified provider result",
+                    },
+                    {
+                      label: "Market access",
+                      state: "Not verified",
+                      detail: "Tariff / regulation / certification",
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/[0.018] px-3 py-2.5"
+                    >
+                      <div>
+                        <div className="text-xs text-white/65">{item.label}</div>
+                        <div className="mt-0.5 text-[10px] text-white/20">{item.detail}</div>
+                      </div>
+                      <span
+                        className={`text-[10px] font-semibold ${
+                          item.state === "Supported" ||
+                          item.state === "Recorded" ||
+                          item.state === "Available"
+                            ? "text-emerald-300/75"
+                            : "text-amber-200/65"
+                        }`}
+                      >
+                        {item.state}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                  Decision brief
+                </div>
+
+                <div className="mt-3 rounded-xl border border-cyan-300/8 bg-cyan-300/[0.02] p-3">
+                  <div className="text-[9px] uppercase tracking-[0.14em] text-cyan-200/45">
+                    Current decision
+                  </div>
+
+                  <div className="mt-1 text-sm font-semibold text-white/75">
+                    {pack.commercialState}
+                  </div>
+
+                  <p className="mt-2 text-xs leading-5 text-white/40">
+                    {pack.commercialReason}
+                  </p>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {(pack.unknowns ?? []).slice(0, 3).map((item, index) => (
+                    <div
+                      key={item}
+                      className="flex gap-2 text-xs leading-5 text-white/40"
+                    >
+                      <span className="text-amber-300/60">
+                        0{index + 1}
+                      </span>
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/6 bg-black/15 p-4">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                  Provider readiness
+                </div>
+
+                <div className="mt-3">
+                  <div className="text-xs text-white/60">
+                    Buyer intelligence
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.018] px-3 py-2.5">
+                    <span className="text-[10px] text-white/30">
+                      Status
+                    </span>
+                    <span className={`text-[10px] font-semibold ${
+                      buyerProvider
+                        ? "text-emerald-300/75"
+                        : "text-amber-200/65"
+                    }`}>
+                      {buyerProvider
+                        ? "Provider configured"
+                        : "Research only"}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.018] px-3 py-2.5">
+                    <span className="text-[10px] text-white/30">
+                      Verified records
+                    </span>
+                    <span className="text-[10px] font-semibold text-white/55">
+                      {buyers.length}
+                    </span>
+                  </div>
+
+                  <p className="mt-3 text-[10px] leading-5 text-white/25">
+                    Pro never converts missing provider data into a positive
+                    commercial claim.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-white/6 bg-black/15 p-4">
+              <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                    Market comparison
+                  </div>
+                  <div className="mt-1 text-xs text-white/30">
+                    Compare opportunity strength with decision confidence instead of ranking by demand alone.
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto">
+                <div className="min-w-[640px]">
+                  <div className="grid grid-cols-[1.4fr_.55fr_.65fr_.8fr_.7fr] gap-3 border-b border-white/6 pb-2 text-[9px] uppercase tracking-[0.12em] text-white/20">
+                    <span>Market</span>
+                    <span>Validation priority</span>
+                    <span>Confidence</span>
+                    <span>Origin</span>
+                    <span>YoY</span>
+                  </div>
+
+                  <div className="divide-y divide-white/5">
+                    {pack.rankedComparison.map((item) => (
+                      <div
+                        key={item.name}
+                        className="grid grid-cols-[1.4fr_.55fr_.65fr_.8fr_.7fr] gap-3 py-3 text-xs text-white/45"
+                      >
+                        <span className="font-medium text-white/65">
+                          {item.name}
+                        </span>
+                        <span>{item.priority}</span>
+                        <span>{item.confidence}</span>
+                        <span>{item.origin}</span>
+                        <span>
+                          {item.growth == null
+                            ? "—"
+                            : `${item.growth > 0 ? "+" : ""}${item.growth.toFixed(1)}%`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-white/6 bg-black/15 p-4">
+              <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
+                Validation sequence
+              </div>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {pack.validationSteps.map((item, index) => (
+                  <div
+                    key={item}
+                    className="rounded-xl border border-white/5 bg-white/[0.018] p-3"
+                  >
+                    <div className="text-[9px] uppercase tracking-[0.12em] text-cyan-200/45">
+                      0{index + 1}
+                    </div>
+                    <div className="mt-1 text-xs leading-5 text-white/50">
+                      {item}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        );
+      })()}
+</main>
   );
 }
 
-function Metric({
-  label,
-  value,
-  detail,
-  emphasis,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  emphasis?: "blue";
-}) {
-  return (
-    <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-        {label}
-      </p>
-
-      <p
-        className={`mt-2 text-2xl font-bold ${
-          emphasis === "blue"
-            ? "text-blue-300"
-            : "text-white"
-        }`}
-      >
-        {value}
-      </p>
-
-      <p className="mt-1 text-xs text-slate-600">
-        {detail}
-      </p>
-    </div>
-  );
+function Stat({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-3.5"><div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/22">{label}</div><div className="mt-2 text-base font-semibold text-white">{value}</div>{detail ? <div className="mt-1 text-[10px] text-white/25">{detail}</div> : null}</div>;
 }
 
-function StatCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: React.ReactNode;
-  detail: string;
-}) {
-  return (
-    <div className="rounded-2xl bg-[#0c1220] p-4">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-        {label}
-      </p>
-
-      <p className="mt-2 text-lg font-semibold text-slate-100">
-        {value}
-      </p>
-
-      <p className="mt-1 text-[11px] text-slate-600">
-        {detail}
-      </p>
-    </div>
-  );
+function Badge({ tone, children }: { tone: "emerald" | "cyan" | "amber" | "slate"; children: React.ReactNode }) {
+  const cls = tone === "emerald" ? "border-emerald-300/15 bg-emerald-300/[0.06] text-emerald-200" : tone === "cyan" ? "border-cyan-300/15 bg-cyan-300/[0.06] text-cyan-200" : tone === "amber" ? "border-amber-300/15 bg-amber-300/[0.06] text-amber-200" : "border-white/8 bg-white/[0.03] text-white/40";
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${cls}`}>{children}</span>;
 }
 
-function ExplainCard({
-  number,
-  title,
-  text,
-}: {
-  number: string;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-2xl bg-[#080d17] p-4">
-      <div className="text-xs font-bold text-blue-300">
-        {number}
-      </div>
-
-      <div className="mt-3 text-sm font-semibold text-white">
-        {title}
-      </div>
-
-      <p className="mt-2 text-xs leading-5 text-slate-600">
-        {text}
-      </p>
-    </div>
-  );
+function Evidence({ label, value, note }: { label: string; value: string; note?: string }) {
+  return <div className="rounded-2xl border border-white/7 bg-black/10 p-3.5"><div className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/20">{label}</div><div className="mt-2 text-sm text-white/65">{value}</div>{note ? <div className="mt-1 text-[10px] leading-5 text-white/22">{note}</div> : null}</div>;
 }
 
-function ResearchStep({
-  number,
-  title,
-  text,
-}: {
-  number: string;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-2xl bg-[#080d17] p-4">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-300">
-        {number} · {title}
-      </div>
-
-      <p className="mt-2 text-xs leading-5 text-slate-500">
-        {text}
-      </p>
-    </div>
-  );
+function Dot({ good, label }: { good: boolean; label: string }) {
+  return <span className="inline-flex items-center gap-2"><span className={`h-1.5 w-1.5 rounded-full ${good ? "bg-emerald-300" : "bg-white/20"}`} />{label}</span>;
 }
 
-function EmptyState({
-  title,
-  text,
-}: {
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="mt-7 rounded-3xl border border-dashed border-white/9 bg-white/[0.015] p-8 text-center">
-      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-slate-600">
-        →
-      </div>
-
-      <p className="mt-4 text-sm font-semibold text-white">
-        {title}
-      </p>
-
-      <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-600">
-        {text}
-      </p>
-    </div>
-  );
-}
-
-function Feature({
-  number,
-  title,
-  text,
-}: {
-  number: string;
-  title: string;
-  text: string;
-}) {
-  return (
-    <article className="rounded-3xl border border-white/7 bg-white/[0.02] p-6 transition hover:border-blue-500/15">
-      <div className="text-sm font-bold text-blue-300">
-        {number}
-      </div>
-
-      <h3 className="mt-5 text-xl font-semibold">
-        {title}
-      </h3>
-
-      <p className="mt-3 text-sm leading-6 text-slate-500">
-        {text}
-      </p>
-    </article>
-  );
-}
-
-function Principle({
-  title,
-  text,
-}: {
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/6 bg-black/10 p-4">
-      <div className="text-sm font-semibold text-slate-200">
-        {title}
-      </div>
-
-      <div className="mt-1 text-xs text-slate-600">
-        {text}
-      </div>
-    </div>
-  );
+function Method({ title, body }: { title: string; body: string }) {
+  return <div className="rounded-2xl border border-white/7 bg-black/10 p-4"><div className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/20">{title}</div><p className="mt-2 text-sm leading-6 text-white/40">{body}</p></div>;
 }

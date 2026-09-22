@@ -41,13 +41,13 @@ describe("buyer intelligence", () => {
 });
 
 describe("buyer verification", () => {
-  it("verifies a buyer with company, product activity, and recent shipment evidence", () => {
+  it("verifies a buyer with provider record, product activity, and recent shipment evidence", () => {
     const result = verifyBuyer(makeBuyer());
 
     expect(result.status).toBe("verified");
-    expect(result.score).toBe(90);
+    expect(result.score).toBe(100);
     expect(result.verifiedSignals).toContain(
-      "A company record link is available."
+      "A provider company record is available."
     );
   });
 
@@ -66,6 +66,19 @@ describe("buyer verification", () => {
       "Shipment date exists but is older than 12 months."
     );
   });
+
+  it("does not verify a buyer when the provider company record is missing", () => {
+    const result = verifyBuyer(
+      makeBuyer({
+        companyLink: null,
+      })
+    );
+
+    expect(result.status).toBe("partially-verified");
+    expect(result.missingSignals).toContain(
+      "A provider company record link is unavailable."
+    );
+  });
 });
 
 describe("buyer evidence", () => {
@@ -75,15 +88,33 @@ describe("buyer evidence", () => {
     expect(result.status).toBe("strong");
     expect(result.score).toBe(100);
   });
+
+  it("uses the canonical evidence score for buyer intelligence", () => {
+    const evidence = evaluateBuyerEvidence(makeBuyer());
+    const intelligence = analyzeBuyer(makeBuyer());
+
+    expect(intelligence.signalScore).toBe(evidence.score);
+  });
 });
 
 describe("buyer summary", () => {
-  it("marks a fully supported buyer as outreach-ready", () => {
+  it("marks a fully supported buyer as an action candidate", () => {
     const result = buildBuyerSummary(makeBuyer());
 
-    expect(result.readiness).toBe("outreach-ready");
+    expect(result.readiness).toBe("action-candidate");
     expect(result.intelligence.signal).toBe("high-signal");
     expect(result.evidence.status).toBe("strong");
     expect(result.verification.status).toBe("verified");
+  });
+
+  it("does not mark a buyer as an action candidate when recency is unavailable", () => {
+    const result = buildBuyerSummary(
+      makeBuyer({
+        lastShipmentDate: null,
+      })
+    );
+
+    expect(result.readiness).toBe("needs-verification");
+    expect(result.verification.status).not.toBe("verified");
   });
 });

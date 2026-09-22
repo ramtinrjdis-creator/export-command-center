@@ -187,8 +187,8 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
 
           const matchingShipments =
             typeof row.matching_shipments === "number"
-              ? row.matching_shipments
-              : 0;
+              ? Math.max(0, Math.round(row.matching_shipments))
+              : null;
 
           const totalShipments =
             typeof row.company_total_shipments === "number"
@@ -206,12 +206,12 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
               : null;
 
           const strongEvidence =
-            matchingShipments >= 10 ||
+            (matchingShipments !== null && matchingShipments >= 10) ||
             (relevance !== null && relevance >= 70) ||
             (specialization !== null && specialization >= 70);
 
           const moderateEvidence =
-            matchingShipments >= 3 ||
+            (matchingShipments !== null && matchingShipments >= 3) ||
             (relevance !== null && relevance >= 40) ||
             (specialization !== null && specialization >= 40);
 

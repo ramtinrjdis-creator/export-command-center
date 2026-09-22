@@ -32,31 +32,34 @@ export function verifyBuyer(
   const verifiedSignals: string[] = [];
   const missingSignals: string[] = [];
 
-  // Company identity
-  if (buyer.companyName.trim()) {
-    score += 10;
-    verifiedSignals.push("Company name is available.");
-  } else {
-    missingSignals.push("Company name is unavailable.");
-  }
+  /*
+   * Verification is intentionally narrower than buyer intelligence.
+   * Provider data can establish a supported buyer record, but it does
+   * not prove official corporate identity, a decision-maker, or outreach
+   * access unless those signals are explicitly present.
+   */
 
-  // Provider-supplied company record
+  // Provider company record.
   if (buyer.companyLink) {
-    score += 25;
-    verifiedSignals.push("A company record link is available.");
+    score += 30;
+    verifiedSignals.push(
+      "A provider company record is available."
+    );
   } else {
-    missingSignals.push("Company record link is unavailable.");
+    missingSignals.push(
+      "A provider company record link is unavailable."
+    );
   }
 
-  // Product-specific shipment activity
+  // Product-specific shipment activity.
   if (buyer.matchingShipments !== null) {
     if (buyer.matchingShipments >= 20) {
-      score += 30;
+      score += 35;
       verifiedSignals.push(
         "Strong product-matched shipment activity is recorded."
       );
     } else if (buyer.matchingShipments >= 5) {
-      score += 22;
+      score += 25;
       verifiedSignals.push(
         "Meaningful product-matched shipment activity is recorded."
       );
@@ -79,14 +82,18 @@ export function verifyBuyer(
   // Lifetime shipment activity is supporting evidence only.
   if (buyer.shipmentCount !== null && buyer.shipmentCount > 0) {
     score += 10;
-    verifiedSignals.push("Overall shipment activity is recorded.");
+    verifiedSignals.push(
+      "Overall shipment activity is recorded."
+    );
   } else {
-    missingSignals.push("Overall shipment activity is unavailable.");
+    missingSignals.push(
+      "Overall shipment activity is unavailable."
+    );
   }
 
-  // Recency must be based on the actual date, not merely its existence.
+  // Recency must use the actual shipment date.
   if (isRecentShipment(buyer.lastShipmentDate)) {
-    score += 15;
+    score += 25;
     verifiedSignals.push(
       "Shipment activity within the last 12 months is recorded."
     );
@@ -100,14 +107,20 @@ export function verifyBuyer(
     );
   }
 
-  // Product-match text alone is not independent verification.
+  /*
+   * Product-match text is supporting context only.
+   * It is deliberately not counted as verification because the text
+   * itself does not independently prove buyer activity.
+   */
   if (!buyer.productMatch) {
-    missingSignals.push("Product match description is unavailable.");
+    missingSignals.push(
+      "Product match description is unavailable."
+    );
   }
 
   score = Math.min(100, Math.round(score));
 
-  const hasCompanyLink = Boolean(buyer.companyLink);
+  const hasProviderRecord = Boolean(buyer.companyLink);
   const hasProductActivity =
     buyer.matchingShipments !== null &&
     buyer.matchingShipments > 0;
@@ -115,8 +128,13 @@ export function verifyBuyer(
     buyer.lastShipmentDate
   );
 
+  /*
+   * "Verified" means sufficiently supported by the provider's
+   * available evidence. It does NOT mean officially verified company
+   * identity or outreach readiness.
+   */
   const status: BuyerVerificationStatus =
-    hasCompanyLink &&
+    hasProviderRecord &&
     hasProductActivity &&
     hasRecentActivity &&
     score >= 75

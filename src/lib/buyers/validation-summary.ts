@@ -16,9 +16,9 @@ export function summarizeBuyerValidation(
       (item) =>
         item.verification.status === "verified"
     ).length,
-    outreachReadyBuyers: summaries.filter(
+    actionCandidateBuyers: summaries.filter(
       (item) =>
-        item.readiness === "outreach-ready"
+        item.readiness === "action-candidate"
     ).length,
   };
 }

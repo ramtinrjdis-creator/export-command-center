@@ -4,7 +4,7 @@ import { evaluateBuyerEvidence } from "./evidence";
 import { verifyBuyer } from "./verification";
 
 export type BuyerReadiness =
-  | "outreach-ready"
+  | "action-candidate"
   | "needs-verification"
   | "research";
 
@@ -13,21 +13,21 @@ export function buildBuyerSummary(buyer: BuyerRecord) {
   const evidence = evaluateBuyerEvidence(buyer);
   const verification = verifyBuyer(buyer);
 
-  const outreachReady =
+  const actionCandidate =
     intelligence.signal === "high-signal" &&
     evidence.status === "strong" &&
     verification.status === "verified";
 
   const needsVerification =
-    !outreachReady &&
+    !actionCandidate &&
     (intelligence.signal === "high-signal" ||
       intelligence.signal === "medium-signal") &&
     (evidence.status === "strong" ||
       evidence.status === "moderate") &&
     verification.status !== "verified";
 
-  const readiness: BuyerReadiness = outreachReady
-    ? "outreach-ready"
+  const readiness: BuyerReadiness = actionCandidate
+    ? "action-candidate"
     : needsVerification
       ? "needs-verification"
       : "research";
