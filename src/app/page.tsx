@@ -325,7 +325,7 @@ function proPackFor(
     market.originExportStatus === "recorded" &&
     evidence >= 70 &&
     (decision.confidence ?? 0) >= 75
-      ? "Commercially actionable"
+      ? "Ready for buyer/access validation"
       : market.originExportStatus === "no_record"
         ? "Validate origin first"
         : evidence < 50
@@ -333,7 +333,7 @@ function proPackFor(
           : "Validation candidate";
 
   const commercialReason =
-    commercialState === "Commercially actionable"
+    commercialState === "Ready for buyer/access validation"
       ? "Core market and origin evidence are strong enough to move into buyer and market-access validation."
       : commercialState === "Validate origin first"
         ? "Destination demand is attractive, but origin-specific trade fit still needs confirmation."
@@ -693,8 +693,13 @@ const [product, setProduct] = useState("Coffee");
       const data = (await response.json()) as AnalysisResponse;
       if (!response.ok || !data.ok) throw new Error(data.error || "Market scan failed.");
       const nextMarkets = data.markets ?? [];
+      const rankedNextMarkets = [...nextMarkets].sort(
+        (a, b) => scoreOf(b) - scoreOf(a),
+      );
+
       setMarkets(nextMarkets);
-      setSelectedMarket(nextMarkets[0] ?? null);
+      setSelectedMarket(rankedNextMarkets[0] ?? null);
+      setProMarketIndex(0);
 
       const currentSnapshot = buildMarketSnapshot(nextMarkets);
       const previousSnapshot = readSavedMarketSnapshot();
@@ -910,9 +915,11 @@ const [product, setProduct] = useState("Coffee");
           {searched && !loading ? (
             <div
               className={`mt-7 rounded-2xl border px-4 py-3 ${
-                markets.length
-                  ? "border-cyan-300/10 bg-cyan-300/[0.02]"
-                  : "border-amber-300/10 bg-amber-300/[0.025]"
+                error
+                  ? "border-rose-300/10 bg-rose-300/[0.025]"
+                  : markets.length
+                    ? "border-cyan-300/10 bg-cyan-300/[0.02]"
+                    : "border-amber-300/10 bg-amber-300/[0.025]"
               }`}
               aria-live="polite"
             >
@@ -922,9 +929,11 @@ const [product, setProduct] = useState("Coffee");
                     Scan status
                   </div>
                   <div className="mt-1 text-xs text-white/55">
-                    {markets.length
-                      ? `${markets.length} candidate markets loaded. The first market is now your working focus.`
-                      : "No usable market candidates were returned for this scan."}
+                    {error
+                      ? "The market scan did not complete successfully. Review the error above and retry."
+                      : markets.length
+                        ? `${markets.length} candidate markets loaded. The highest-priority market is now your working focus.`
+                        : "No usable market candidates were returned for this scan."}
                   </div>
                 </div>
 
