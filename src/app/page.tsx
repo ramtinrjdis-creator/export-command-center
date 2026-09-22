@@ -149,6 +149,45 @@ type BuyerResponse = {
   research?: BuyerResearch;
 };
 
+type SupplierRecord = {
+  countryCode: number;
+  country: string;
+  importValue: number;
+  share: number;
+  rank: number;
+};
+
+type SupplierLandscape = {
+  status?: "supported" | "partial" | "unavailable";
+  destinationCode?: number;
+  hsCode?: string;
+  year?: number;
+  totalImportValue?: number | null;
+  suppliers?: SupplierRecord[];
+  origin?: {
+    status?: "recorded" | "no_record" | "not_checked" | "unavailable";
+    countryCode?: number | null;
+    importValue?: number | null;
+    share?: number | null;
+    rank?: number | null;
+  };
+  coverage?: {
+    supplierCount?: number;
+    representedValue?: number;
+    representedShare?: number | null;
+  };
+  limitations?: string[];
+};
+
+type SupplierResponse = {
+  ok?: boolean;
+  error?: string;
+  code?: string;
+  retryable?: boolean;
+  retryAfterSeconds?: number;
+  supplierLandscape?: SupplierLandscape;
+};
+
 type Country = { code: number; name: string; flag: string };
 
 const COUNTRIES: Country[] = [
@@ -480,6 +519,11 @@ const [product, setProduct] = useState("Coffee");
   const [buyerResearch, setBuyerResearch] = useState<BuyerResearch | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const [supplierLandscape, setSupplierLandscape] = useState<SupplierLandscape | null>(null);
+  const [supplierLoading, setSupplierLoading] = useState(false);
+  const [supplierError, setSupplierError] = useState("");
+  const [supplierMarketKey, setSupplierMarketKey] = useState("");
+
   const selectedCountry = COUNTRIES.find((c) => String(c.code) === originCode) || COUNTRIES.find((c) => c.code === 364)!;
 
   const filteredCountries = useMemo(() => {
@@ -696,6 +740,9 @@ const [product, setProduct] = useState("Coffee");
     setBuyers([]);
     setBuyerError("");
     setBuyerResearch(null);
+    setSupplierLandscape(null);
+    setSupplierError("");
+    setSupplierMarketKey("");
 
     try {
       const params = new URLSearchParams({ hsCode: cleanHs, year, origin: originCode });
@@ -762,6 +809,58 @@ const [product, setProduct] = useState("Coffee");
     }
   }
 
+  async function loadSupplierLandscape(market: Market) {
+    const marketCode = Number(market.countryCode);
+
+    if (!Number.isInteger(marketCode) || marketCode < 1) {
+      setSupplierError("Supplier evidence requires a valid destination market.");
+      return;
+    }
+
+    setSupplierLoading(true);
+    setSupplierError("");
+    setSupplierMarketKey(marketKey(market));
+
+    try {
+      const params = new URLSearchParams({
+        hsCode,
+        market: String(marketCode),
+        marketName: nameOf(market),
+        origin: originCode,
+        year,
+        limit: "12",
+      });
+
+      const response = await fetch(`/api/suppliers?${params.toString()}`);
+      const data = (await response.json()) as SupplierResponse;
+
+      if (!response.ok || data.ok === false) {
+        const retryHint =
+          data.retryAfterSeconds != null
+            ? ` Retry in about ${data.retryAfterSeconds}s.`
+            : "";
+        throw new Error(
+          `${data.error || "Supplier landscape unavailable."}${retryHint}`,
+        );
+      }
+
+      if (!data.supplierLandscape) {
+        throw new Error("Supplier landscape data was not returned.");
+      }
+
+      setSupplierLandscape(data.supplierLandscape);
+    } catch (err) {
+      setSupplierLandscape(null);
+      setSupplierError(
+        err instanceof Error
+          ? err.message
+          : "Supplier landscape unavailable.",
+      );
+    } finally {
+      setSupplierLoading(false);
+    }
+  }
+
   async function copyQuery() {
     if (!researchQuery) return;
 
@@ -775,6 +874,10 @@ const [product, setProduct] = useState("Coffee");
   }
 
   const focusMarket = selectedMarket ?? rankedMarkets[0] ?? null;
+  const supplierLoadedForFocus =
+    Boolean(focusMarket) &&
+    Boolean(supplierLandscape) &&
+    supplierMarketKey === marketKey(focusMarket as Market);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#05080d] text-white selection:bg-cyan-300/20 selection:text-cyan-100 ecc-v7">
@@ -1244,7 +1347,7 @@ const [product, setProduct] = useState("Coffee");
 
           {searched && markets.length ? <div className="mt-8 grid gap-4 lg:grid-cols-[1.1fr_.9fr]"><div className="rounded-[28px] border border-cyan-300/10 bg-cyan-300/[0.035] p-5 md:p-6"><div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-cyan-200/70">Decision engine</div><div className="mt-3 text-2xl font-semibold tracking-tight">Start validation with {nameOf(rankedMarkets[0])}.</div><p className="mt-3 max-w-2xl text-sm leading-7 text-white/45">{rankedMarkets[0].intelligence?.nextAction || "Validate buyer access and market-entry conditions before outreach."}</p><div className="mt-5 flex flex-wrap gap-2"><Badge tone="cyan">Relative demand {Math.round(rankedMarkets[0].demandScore ?? rankedMarkets[0].score ?? 0)}/100</Badge><Badge tone={rankedMarkets[0].intelligence?.evidenceStatus === "strong" ? "emerald" : "amber"}>{rankedMarkets[0].intelligence?.evidenceLabel || "Evidence"} evidence</Badge><Badge tone="slate">Source: UN Comtrade</Badge></div></div><div className="rounded-[28px] border border-white/8 bg-white/[0.02] p-5 md:p-6"><div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/20">What is still missing</div><div className="mt-4 space-y-2 text-sm text-white/45"><div className="flex items-center gap-3"><span className="h-1.5 w-1.5 rounded-full bg-amber-300" /> Buyer/company evidence</div><div className="flex items-center gap-3"><span className="h-1.5 w-1.5 rounded-full bg-amber-300" /> Market-access verification</div><div className="flex items-center gap-3"><span className="h-1.5 w-1.5 rounded-full bg-amber-300" /> Supplier-side commercial fit</div></div></div></div> : null}
 
-          {screening?.methodology ? <details id="evidence" className="mt-8 rounded-[28px] border border-white/8 bg-white/[0.02] p-5 md:p-6"><summary className="cursor-pointer list-none text-sm font-medium text-white/70">How the signal is built</summary><div className="mt-5 grid gap-4 md:grid-cols-3"><Method title="Relative demand" body="Compares this market’s import value with the other markets returned in the same scan. It is not an absolute demand probability or percentage." /><Method title="Growth" body="Year-over-year movement shows whether demand is expanding or contracting." /><Method title="Origin" body="Origin-specific evidence is checked separately; unavailable data is never treated as zero." /></div><p className="mt-5 border-t border-white/6 pt-4 text-xs leading-6 text-white/22">{screening.methodology}</p></details> : null}
+          {screening?.methodology ? <details className="mt-8 rounded-[28px] border border-white/8 bg-white/[0.02] p-5 md:p-6"><summary className="cursor-pointer list-none text-sm font-medium text-white/70">How the signal is built</summary><div className="mt-5 grid gap-4 md:grid-cols-3"><Method title="Relative demand" body="Compares this market’s import value with the other markets returned in the same scan. It is not an absolute demand probability or percentage." /><Method title="Growth" body="Year-over-year movement shows whether demand is expanding or contracting." /><Method title="Origin" body="Origin-specific evidence is checked separately; unavailable data is never treated as zero." /></div><p className="mt-5 border-t border-white/6 pt-4 text-xs leading-6 text-white/22">{screening.methodology}</p></details> : null}
         </div>
       </section>
 
@@ -1502,7 +1605,7 @@ const [product, setProduct] = useState("Coffee");
 
 
       {/* ECC_FINAL_INTELLIGENCE_V1 */}
-      <section id="decision-intelligence" className="scroll-mt-24 border-y border-white/[0.06] bg-[#060b10]">
+      <section id="evidence" className="scroll-mt-24 border-y border-white/[0.06] bg-[#060b10]">
         <div className="mx-auto max-w-7xl px-5 py-16 md:px-8 md:py-20">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
@@ -1514,7 +1617,7 @@ const [product, setProduct] = useState("Coffee");
           </div>
 
           {focusMarket ? (
-            <div className="mt-8 grid gap-4 lg:grid-cols-3">
+            <div className="mt-8 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
               <article className="rounded-[24px] border border-white/[0.08] bg-white/[0.025] p-5">
                 <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">Data trust</div>
                 <div className="mt-3 text-lg font-semibold text-white">{focusMarket.dataTrust?.truth === "reported" ? "Reported trade signal" : focusMarket.dataTrust?.truth === "estimated" ? "Estimated signal" : focusMarket.dataTrust?.truth === "not-reported" ? "Non-reported record" : "Mixed / unresolved"}</div>
@@ -1537,6 +1640,98 @@ const [product, setProduct] = useState("Coffee");
                 <div className="mt-2 text-xs leading-5 text-white/35">Stage: {focusMarket.commercialReadiness?.stage || "market-screened"}</div>
                 <div className="mt-4 rounded-2xl border border-white/7 bg-black/15 p-4 text-xs leading-5 text-white/45">{focusMarket.commercialReadiness?.nextStep || "Continue validation before commercial scaling."}</div>
                 {focusMarket.commercialReadiness?.blockers?.length ? <div className="mt-4 space-y-2">{focusMarket.commercialReadiness.blockers.slice(0, 3).map((item: string) => <div key={item} className="text-xs leading-5 text-white/30">• {item}</div>)}</div> : null}
+              </article>
+
+              <article className="rounded-[24px] border border-white/[0.08] bg-white/[0.025] p-5">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/55">
+                  Competitive landscape
+                </div>
+                <div className="mt-3 text-lg font-semibold text-white">
+                  {supplierLoadedForFocus
+                    ? `${supplierLandscape?.suppliers?.length ?? 0} supplier markets`
+                    : "Not checked yet"}
+                </div>
+                <div className="mt-2 text-xs leading-5 text-white/35">
+                  Destination supplier evidence loads on demand so a normal market scan does not create a burst of upstream requests.
+                </div>
+
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => focusMarket && void loadSupplierLandscape(focusMarket)}
+                    disabled={!focusMarket || supplierLoading}
+                    className="w-full rounded-xl border border-cyan-300/15 bg-cyan-300/[0.06] px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100 transition hover:bg-cyan-300/[0.1] disabled:opacity-40"
+                  >
+                    {supplierLoading
+                      ? "Loading competition..."
+                      : supplierLoadedForFocus
+                        ? "Refresh competition evidence"
+                        : "Load competition evidence"}
+                  </button>
+                </div>
+
+                {supplierError ? (
+                  <div
+                    role="alert"
+                    className="mt-3 rounded-xl border border-amber-300/10 bg-amber-300/[0.025] p-3 text-[10px] leading-5 text-amber-100/55"
+                  >
+                    {supplierError}
+                  </div>
+                ) : null}
+
+                {supplierLoadedForFocus ? (
+                  <>
+                    <div className="mt-4 rounded-xl border border-white/7 bg-black/15 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[9px] uppercase tracking-[0.14em] text-white/22">
+                          Origin position
+                        </span>
+                        <span className="text-[10px] font-semibold text-white/65">
+                          {supplierLandscape?.origin?.status === "recorded"
+                            ? `#${supplierLandscape.origin.rank ?? "—"} · ${supplierLandscape.origin.share != null ? `${supplierLandscape.origin.share.toFixed(1)}%` : "—"}`
+                            : supplierLandscape?.origin?.status === "no_record"
+                              ? "No supplier record"
+                              : "Not established"}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 text-[10px] leading-5 text-white/30">
+                        {supplierLandscape?.coverage?.representedShare != null
+                          ? `Coverage represented: ${supplierLandscape.coverage.representedShare.toFixed(1)}% of reported destination imports.`
+                          : "Destination import total was not available for share calculation."}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {(supplierLandscape?.suppliers ?? []).slice(0, 5).map((supplier) => (
+                        <div
+                          key={`${supplier.countryCode}-${supplier.rank}`}
+                          className="flex items-center gap-3 rounded-xl border border-white/6 bg-black/10 px-3 py-2.5"
+                        >
+                          <span className="w-6 text-[10px] text-white/20">
+                            #{supplier.rank}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-xs text-white/65">
+                            {supplier.country}
+                          </span>
+                          <span className="text-[10px] text-white/35">
+                            {supplier.share.toFixed(1)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {supplierLandscape?.limitations?.length ? (
+                      <div className="mt-4 space-y-1.5">
+                        {supplierLandscape.limitations.slice(0, 2).map((item) => (
+                          <div key={item} className="text-[10px] leading-5 text-white/25">
+                            · {item}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
               </article>
             </div>
           ) : (

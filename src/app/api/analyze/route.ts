@@ -116,9 +116,13 @@ async function fetchYear(
       isReported:
         typeof item.isReported === "boolean" ? item.isReported : null,
       isEstimated:
-        Boolean(item.isQtyEstimated) || Number(item.legacyEstimationFlag || 0) !== 0,
+        Boolean(item.isQtyEstimated) ||
+        Boolean(item.isNetWgtEstimated) ||
+        [2, 4, 6].includes(Number(item.legacyEstimationFlag ?? 0)),
       isQuantityEstimated:
-        Boolean(item.isQtyEstimated) || Number(item.legacyEstimationFlag || 0) === 2,
+        Boolean(item.isQtyEstimated) ||
+        Boolean(item.isNetWgtEstimated) ||
+        [2, 4, 6].includes(Number(item.legacyEstimationFlag ?? 0)),
     }));
 }
 
@@ -362,6 +366,10 @@ export async function GET(request: Request) {
           }
         }
       } catch (error) {
+        if (error instanceof ComtradeRateLimitError) {
+          throw error;
+        }
+
         console.error("Origin batch lookup failed:", error);
 
         for (const market of currentMarkets) {
