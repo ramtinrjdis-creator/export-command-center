@@ -136,6 +136,7 @@ type BuyerResponse = {
   error?: string;
   buyers?: Buyer[];
   provider?: string | { mode?: string; configured?: boolean; source?: string };
+  providerFallbackReason?: string | null;
   research?: BuyerResearch;
 };
 
@@ -458,6 +459,7 @@ const [product, setProduct] = useState("Coffee");
   const [buyerLoading, setBuyerLoading] = useState(false);
   const [buyerError, setBuyerError] = useState("");
   const [buyerProvider, setBuyerProvider] = useState<BuyerResponse["provider"] | null>(null);
+  const [buyerFallbackReason, setBuyerFallbackReason] = useState<string | null>(null);
   const [buyerResearch, setBuyerResearch] = useState<BuyerResearch | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -477,6 +479,25 @@ const [product, setProduct] = useState("Coffee");
   const researchUrl = researchQuery
     ? `https://www.google.com/search?q=${encodeURIComponent(researchQuery)}`
     : "#";
+
+  function focusWorkspace(market: Market) {
+    const targetKey = `${nameOf(market)}:${String(market.countryCode ?? "")}`;
+
+    const index = rankedMarkets.findIndex(
+      (item) =>
+        `${nameOf(item)}:${String(item.countryCode ?? "")}` === targetKey,
+    );
+
+    setSelectedMarket(market);
+    setProMarketIndex(index >= 0 ? index : 0);
+
+    window.setTimeout(() => {
+      document.getElementById("decision-workspace")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 40);
+  }
 
   async function scan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -527,6 +548,7 @@ const [product, setProduct] = useState("Coffee");
     setBuyerError("");
     setBuyers([]);
     setBuyerProvider(null);
+    setBuyerFallbackReason(null);
     setBuyerResearch(null);
     try {
       const params = new URLSearchParams({
@@ -541,6 +563,7 @@ const [product, setProduct] = useState("Coffee");
       if (!response.ok || data.ok === false) throw new Error(data.error || "Buyer research unavailable.");
       setBuyers(data.buyers ?? []);
       setBuyerProvider(data.provider ?? null);
+      setBuyerFallbackReason(data.providerFallbackReason ?? null);
       setBuyerResearch(data.research ?? null);
       window.setTimeout(() => document.getElementById("buyers")?.scrollIntoView({ behavior: "smooth" }), 60);
     } catch (err) {
@@ -584,7 +607,7 @@ const [product, setProduct] = useState("Coffee");
             <a href="#market-results" className="hover:text-white">Markets</a>
             <a href="#buyers" className="hover:text-white">Buyers</a>
             <a href="#evidence" className="hover:text-white">Evidence</a>
-          <a href="#workspace-tools" className="transition hover:text-white">Workspace</a>
+          <a href="#decision-workspace" className="transition hover:text-white">Workspace</a>
           <a href="#pro" className="transition hover:text-white">Pro</a>
           </nav>
 
@@ -974,7 +997,25 @@ const [product, setProduct] = useState("Coffee");
                       </details>
                     ) : null}
 
-                    <button onClick={() => investigate(market)} className="mt-6 w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-[#061016] hover:bg-cyan-50">Investigate buyers ↗</button>
+                    <div className="mt-6 grid gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => focusWorkspace(market)}
+                        className="w-full rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.05] px-4 py-3 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/[0.09]"
+                        aria-label={`Open decision workspace for ${nameOf(market)}`}
+                      >
+                        Open decision workspace
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => investigate(market)}
+                        className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-[#061016] transition hover:bg-cyan-50"
+                        aria-label={`Investigate buyers for ${nameOf(market)}`}
+                      >
+                        Investigate buyers ↗
+                      </button>
+                    </div>
                   </article>
                 );
               })}
@@ -1013,6 +1054,9 @@ const [product, setProduct] = useState("Coffee");
                 </div>
                 <div className="mt-1 text-sm font-medium text-white/80">
                   {selectedName}
+                </div>
+                <div className="mt-1 text-[10px] text-white/25">
+                  Selected from market intelligence
                 </div>
               </div>
             ) : null}
@@ -1217,7 +1261,18 @@ const [product, setProduct] = useState("Coffee");
   }
 /></div>{buyer.evidence ? <p className="mt-3 text-xs leading-5 text-white/35">{buyer.evidence}</p> : null}</div>)}</div> : buyerResearch ? <div className="mt-5 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.035] p-4"><div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-200/65">Free buyer research mode</div><div className="mt-2 text-sm text-white/70">No paid company database is being used. The workflow gives you targeted searches you can verify yourself.</div><div className="mt-4 space-y-2">{(buyerResearch.links || []).map((link) => <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-xl border border-white/8 bg-black/10 px-3 py-2.5 text-xs text-white/55 hover:border-cyan-300/15 hover:text-cyan-100"><span>{link.label}</span><span>↗</span></a>)}</div><div className="mt-4 rounded-xl border border-white/7 bg-black/10 p-3 text-[10px] leading-5 text-white/30">{buyerResearch.note || "Verify every company before outreach and keep the source attached to your research record."}</div></div> : <div className="mt-5 grid gap-3 md:grid-cols-3">{[["01", "Find companies"], ["02", "Verify relevance"], ["03", "Record evidence"]].map(([n, title]) => <div key={n} className="rounded-2xl border border-white/7 bg-black/10 p-4"><div className="text-[9px] text-cyan-200/65">{n}</div><div className="mt-2 text-sm text-white/70">{title}</div><div className="mt-1 text-xs leading-5 text-white/25">Use evidence before outreach.</div></div>)}</div>}
 
-              {buyerProvider ? <div className="mt-5 text-[10px] uppercase tracking-[0.14em] text-white/18">Layer: {typeof buyerProvider === "string" ? buyerProvider : buyerProvider.source || buyerProvider.mode || "research"}</div> : null}
+              {buyerProvider ? (
+                <div className="mt-5 text-[10px] uppercase tracking-[0.14em] text-white/18">
+                  Layer: {typeof buyerProvider === "string" ? buyerProvider : buyerProvider.source || buyerProvider.mode || "research"}
+                </div>
+              ) : null}
+
+              {buyerFallbackReason ? (
+                <div className="mt-3 rounded-xl border border-amber-300/10 bg-amber-300/[0.025] px-3 py-2.5 text-[10px] leading-5 text-amber-100/45">
+                  Provider fallback: {buyerFallbackReason.replaceAll("_", " ")}.
+                  Free research mode is being used instead.
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
