@@ -11,7 +11,10 @@ describe("market scoring", () => {
       growthConsistency: 1,
       originStatus: "recorded",
       evidenceScore: 90,
-      macro: { population: 100_000_000, gdpPerCapita: 20_000 },
+      macro: {
+        population: 100_000_000,
+        gdpPerCapita: 20_000,
+      },
     });
 
     expect(result.score).toBeGreaterThanOrEqual(75);
@@ -48,5 +51,21 @@ describe("market scoring", () => {
 
     expect(result.signal).toBe("insufficient-evidence");
     expect(result.score).toBeLessThan(60);
+  });
+
+  it("handles a one-market universe without producing NaN", () => {
+    const result = scoreMarket({
+      importValue: 1,
+      maxImportValue: 1,
+      growthRate: null,
+      cagr3y: null,
+      growthConsistency: null,
+      originStatus: "recorded",
+      evidenceScore: 70,
+      macro: null,
+    });
+
+    expect(Number.isFinite(result.score)).toBe(true);
+    expect(result.score).toBeGreaterThanOrEqual(0);
   });
 });

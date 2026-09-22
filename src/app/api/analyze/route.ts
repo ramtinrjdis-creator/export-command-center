@@ -309,22 +309,39 @@ export async function GET(request: Request) {
     const twoBackMap = new Map(twoBack.map((market) => [market.countryCode, market.importValue]));
     const threeBackMap = new Map(threeBack.map((market) => [market.countryCode, market.importValue]));
 
-    const candidates = current.sort((a, b) => b.importValue - a.importValue).slice(0, 20);
-    const maxImport = candidates[0]?.importValue || 0;
+    const currentMarkets = current.filter(
+      (market) =>
+        Number.isInteger(market.countryCode) &&
+        market.countryCode > 0 &&
+        Number.isFinite(market.importValue) &&
+        market.importValue > 0,
+    );
 
-    const macroMap = await fetchWorldBankMacro(candidates, year);
+    const maxImport =
+      currentMarkets.reduce(
+        (max, market) => Math.max(max, market.importValue),
+        0,
+      );
+
     const originStatusMap = new Map<
-  number,
-  "recorded" | "no_record" | "unavailable" | "data_unavailable"
->();
+      number,
+      "recorded" | "no_record" | "unavailable" | "data_unavailable"
+    >();
+
     const originValueMap = new Map<number, number | null>();
 
+    /*
+     * Origin lookup already returns destination reporters for the selected
+     * origin. Use that single response across the whole current universe
+     * before candidate selection, rather than checking origin only after
+     * a top-20-by-import filter.
+     */
     if (origin !== null) {
       try {
         const originRows = await fetchOriginImports(
           hsCode,
           String(year),
-          origin as number
+          origin as number,
         );
 
         const originMap = new Map<number, number>();
@@ -338,11 +355,14 @@ export async function GET(request: Request) {
           }
         }
 
-        for (const market of candidates) {
+        for (const market of currentMarkets) {
           const code = Number(market.countryCode);
 
           if (originMap.has(code)) {
-            originValueMap.set(code, originMap.get(code) ?? null);
+            originValueMap.set(
+              code,
+              originMap.get(code) ?? null,
+            );
             originStatusMap.set(code, "recorded");
           } else {
             originValueMap.set(code, null);
@@ -352,13 +372,160 @@ export async function GET(request: Request) {
       } catch (error) {
         console.error("Origin batch lookup failed:", error);
 
-        for (const market of candidates) {
+        for (const market of currentMarkets) {
           const code = Number(market.countryCode);
+
           originValueMap.set(code, null);
           originStatusMap.set(code, "unavailable");
         }
       }
     }
+
+    /*
+     * Evidence-aware candidate discovery:
+     *
+     * 1. Build the same market potential inputs used by the canonical
+     *    scoring layer for every positive current market.
+     * 2. Include origin evidence and evidence coverage in the screen.
+     * 3. Only after that do we keep the top 20 for deeper enrichment.
+     *
+     * This prevents a large low-growth market from automatically pushing
+     * a smaller but fast-growing / better-evidenced export market out of
+     * discovery.
+     */
+    const marketSeeds = currentMarkets
+      .map((market) => {
+        const previousValue =
+          previousMap.get(market.countryCode) ?? null;
+
+        const twoBackValue =
+          twoBackMap.get(market.countryCode) ?? null;
+
+        const threeBackValue =
+          threeBackMap.get(market.countryCode) ?? null;
+
+        const growthRate =
+          previousValue !== null && previousValue > 0
+            ? Number(
+                (
+                  ((market.importValue - previousValue) /
+                    previousValue) *
+                  100
+                ).toFixed(1),
+              )
+            : null;
+
+        const cagr3y =
+          threeBackValue !== null &&
+          threeBackValue > 0
+            ? Number(
+                (
+                  (Math.pow(
+                    market.importValue / threeBackValue,
+                    1 / 3,
+                  ) -
+                    1) *
+                  100
+                ).toFixed(1),
+              )
+            : null;
+
+        const periods = [
+          [twoBackValue, previousValue],
+          [previousValue, market.importValue],
+        ].map(([from, to]) =>
+          from &&
+          from > 0 &&
+          to != null
+            ? ((to - from) / from) * 100
+            : null,
+        );
+
+        const validPeriods = periods.filter(
+          (value): value is number =>
+            value !== null && Number.isFinite(value),
+        );
+
+        const growthConsistency = validPeriods.length
+          ? validPeriods.filter((value) => value > 0)
+              .length / validPeriods.length
+          : null;
+
+        const demandScore =
+          maxImport > 1
+            ? Math.round(
+                (Math.log10(
+                  Math.max(market.importValue, 1),
+                ) /
+                  Math.log10(Math.max(maxImport, 1))) *
+                  100,
+              )
+            : 100;
+
+        const originStatus =
+          origin !== null
+            ? originStatusMap.get(
+                market.countryCode,
+              ) ?? "data_unavailable"
+            : null;
+
+        const originValue =
+          origin !== null
+            ? originValueMap.get(
+                market.countryCode,
+              ) ?? null
+            : null;
+
+        const originShare = calculateOriginShare(
+          originValue,
+          market.importValue,
+        );
+
+        const intelligence = buildMarketIntelligence({
+          importValue: market.importValue,
+          previousImportValue: previousValue,
+          growthRate,
+          demandScore,
+          isReported: market.isReported,
+          isEstimated: market.isEstimated,
+          isQuantityEstimated:
+            market.isQuantityEstimated,
+          originExportValue: originValue,
+          originExportStatus: originStatus,
+          originShare,
+        });
+
+        const opportunity = scoreMarket({
+          importValue: market.importValue,
+          maxImportValue: maxImport,
+          growthRate,
+          cagr3y,
+          growthConsistency,
+          originStatus,
+          evidenceScore:
+            intelligence.evidenceScore,
+          macro: null,
+        });
+
+        return {
+          market,
+          opportunity,
+        };
+      })
+      .sort(
+        (a, b) =>
+          (b.opportunity?.score ?? 0) -
+          (a.opportunity?.score ?? 0),
+      );
+
+    const candidates = marketSeeds
+      .slice(0, 20)
+      .map((seed) => seed.market);
+
+    const macroMap = await fetchWorldBankMacro(
+      candidates,
+      year,
+    );
 
     const markets = candidates
       .map((market) => {
@@ -566,7 +733,7 @@ export async function GET(request: Request) {
         strongSignals: strongCount,
         validationTargets: validationCount,
         methodology:
-          "Markets use destination import demand, year-over-year growth, a 3-year trend, origin-specific bilateral checks, evidence coverage, and optional macro context. Missing evidence is never treated as zero trade.",
+          "Candidate discovery pre-screens the full positive destination dataset using import demand, year-over-year growth, 3-year trend, evidence coverage and origin-specific checks; the top 20 are then enriched with macro context and final decision layers. Missing evidence is never treated as zero trade.",
       },
       evidence: {
         sources: ["UN Comtrade", "World Bank World Development Indicators"],

@@ -11,6 +11,14 @@ const BASE_URL =
 
 const IMPORTYETI_TIMEOUT_MS = 10_000;
 
+const IMPORTYETI_US_CODES = new Set([840, 842]);
+
+export function isImportYetiSupportedMarket(
+  countryCode: number,
+): boolean {
+  return IMPORTYETI_US_CODES.has(countryCode);
+}
+
 type ImportYetiProductCompany = {
   company_link?: string;
   company_name?: string;
@@ -113,7 +121,7 @@ export class ImportYetiBuyerProvider implements BuyerDataProvider {
       };
     }
 
-    if (input.marketCountryCode !== 840) {
+    if (!isImportYetiSupportedMarket(input.marketCountryCode)) {
       return {
         status: "unavailable",
         buyers: [],

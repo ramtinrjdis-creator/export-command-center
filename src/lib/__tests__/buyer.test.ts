@@ -3,6 +3,7 @@ import { analyzeBuyer } from "../buyers/intelligence";
 import { evaluateBuyerEvidence } from "../buyers/evidence";
 import { verifyBuyer } from "../buyers/verification";
 import { buildBuyerSummary } from "../buyers/summary";
+import { isImportYetiSupportedMarket } from "../buyers/providers/importyeti";
 import type { BuyerRecord } from "../buyers/types";
 
 function makeBuyer(
@@ -29,6 +30,14 @@ function makeBuyer(
     ...overrides,
   };
 }
+
+describe("buyer provider market compatibility", () => {
+  it("accepts both ISO numeric US representations used by integrations", () => {
+    expect(isImportYetiSupportedMarket(840)).toBe(true);
+    expect(isImportYetiSupportedMarket(842)).toBe(true);
+    expect(isImportYetiSupportedMarket(276)).toBe(false);
+  });
+});
 
 describe("buyer intelligence", () => {
   it("classifies strong buyer evidence as high-signal", () => {

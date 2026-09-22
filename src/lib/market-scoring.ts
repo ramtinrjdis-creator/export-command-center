@@ -4,7 +4,12 @@ export type MarketScoreInput = {
   growthRate: number | null;
   cagr3y: number | null;
   growthConsistency: number | null;
-  originStatus: "recorded" | "no_record" | "unavailable" | "data_unavailable" | null;
+  originStatus:
+    | "recorded"
+    | "no_record"
+    | "unavailable"
+    | "data_unavailable"
+    | null;
   evidenceScore: number;
   macro?: {
     population: number | null;
@@ -14,7 +19,11 @@ export type MarketScoreInput = {
 
 export type MarketScoreResult = {
   score: number;
-  signal: "strong-validation-target" | "validation-target" | "monitor" | "insufficient-evidence";
+  signal:
+    | "strong-validation-target"
+    | "validation-target"
+    | "monitor"
+    | "insufficient-evidence";
   demandScore: number;
   growthScore: number;
   historyScore: number;
@@ -39,26 +48,34 @@ function normalizeCagr(value: number | null) {
 
 export function scoreMarket(input: MarketScoreInput): MarketScoreResult {
   const demandScore =
-    input.maxImportValue > 0
-      ? clamp((Math.log10(Math.max(input.importValue, 1)) / Math.log10(Math.max(input.maxImportValue, 1))) * 100)
-      : 0;
+    input.maxImportValue > 1
+      ? clamp(
+          (Math.log10(Math.max(input.importValue, 1)) /
+            Math.log10(Math.max(input.maxImportValue, 1))) *
+            100,
+        )
+      : input.importValue > 0
+        ? 100
+        : 0;
 
   const growthScore = normalizeGrowth(input.growthRate);
   const cagrScore = normalizeCagr(input.cagr3y);
+
   const consistencyScore =
-    input.growthConsistency === null || Number.isNaN(input.growthConsistency)
+    input.growthConsistency === null ||
+    Number.isNaN(input.growthConsistency)
       ? 50
       : clamp(input.growthConsistency * 100);
 
-  const historyScore = Math.round(cagrScore * 0.65 + consistencyScore * 0.35);
+  const historyScore = Math.round(
+    cagrScore * 0.65 + consistencyScore * 0.35,
+  );
 
   /*
    * Market Potential answers only:
    * "How attractive is the destination market itself?"
    *
    * Origin fit is deliberately kept out of this score.
-   * A market can be highly attractive even when the selected
-   * origin has no proven export history into it.
    */
   const originScore =
     input.originStatus === "recorded"
@@ -68,9 +85,9 @@ export function scoreMarket(input: MarketScoreInput): MarketScoreResult {
         : 20;
 
   let score = Math.round(
-    demandScore * 0.50 +
-    growthScore * 0.25 +
-    historyScore * 0.25
+    demandScore * 0.5 +
+      growthScore * 0.25 +
+      historyScore * 0.25,
   );
 
   const riskFlags: string[] = [];
@@ -83,7 +100,10 @@ export function scoreMarket(input: MarketScoreInput): MarketScoreResult {
     riskFlags.push("Negative 3-year trend");
   }
 
-  if (input.growthConsistency !== null && input.growthConsistency < 0.5) {
+  if (
+    input.growthConsistency !== null &&
+    input.growthConsistency < 0.5
+  ) {
     riskFlags.push("Uneven growth history");
   }
 
@@ -100,7 +120,10 @@ export function scoreMarket(input: MarketScoreInput): MarketScoreResult {
     riskFlags.push("Limited evidence coverage");
   }
 
-  if (input.macro?.gdpPerCapita === null) {
+  if (
+    input.macro == null ||
+    input.macro.gdpPerCapita === null
+  ) {
     riskFlags.push("Macro context incomplete");
   }
 
@@ -108,23 +131,19 @@ export function scoreMarket(input: MarketScoreInput): MarketScoreResult {
     score = Math.min(score, 59);
   }
 
-  /*
-   * A market-potential score is not the same as a validated export
-   * opportunity. Strong validation requires positive origin evidence.
-   */
   const positiveOriginEvidence =
     input.originStatus === "recorded";
 
   const signal =
     input.evidenceScore < 40
       ? "insufficient-evidence"
-      : positiveOriginEvidence && score >= 75 && input.evidenceScore >= 70
+      : positiveOriginEvidence &&
+          score >= 75 &&
+          input.evidenceScore >= 70
         ? "strong-validation-target"
         : positiveOriginEvidence && score >= 60
           ? "validation-target"
-          : score >= 60
-            ? "monitor"
-            : "monitor";
+          : "monitor";
 
   const rationale =
     signal === "strong-validation-target"

@@ -701,7 +701,12 @@ const [product, setProduct] = useState("Coffee");
       setSelectedMarket(rankedNextMarkets[0] ?? null);
       setProMarketIndex(0);
 
-      const currentSnapshot = buildMarketSnapshot(nextMarkets);
+      const currentSnapshot = buildMarketSnapshot(nextMarkets, {
+        product: product.trim(),
+        hsCode: cleanHs,
+        originCode,
+        year,
+      });
       const previousSnapshot = readSavedMarketSnapshot();
       setMonitoringChange(compareMarketSnapshots(previousSnapshot, currentSnapshot));
       saveMarketSnapshot(currentSnapshot);
