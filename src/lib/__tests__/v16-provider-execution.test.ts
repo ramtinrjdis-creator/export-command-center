@@ -101,7 +101,7 @@ describe("V16.8E durable provider execution", () => {
 
     expect(await transitionProviderExecution({
       executionId: "exec-1",
-      nextStatus: "succeeded",
+      nextStatus: "reconciliation_required",
     })).toBe(true);
 
     expect(String(db.mock.calls[0][0]))
@@ -113,7 +113,7 @@ describe("V16.8E durable provider execution", () => {
 
     expect(await transitionProviderExecution({
       executionId: "exec-1",
-      nextStatus: "failed",
+      nextStatus: "reconciliation_required",
     })).toBe(false);
   });
 

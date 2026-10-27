@@ -139,25 +139,21 @@ export async function claimProviderExecution(
 }
 
 /**
- * Compare-and-set transition. Only pending can be finalized.
- * Repeated calls cannot overwrite an already finalized outcome.
+ * Legacy transition: only mark uncertain outcomes; financial finalization
+ * must use settleProviderExecution() in a single DB transaction.
  *
  * A pending execution may be dispatched or not yet dispatched;
  * never infer it is safe to retry based on its age.
  */
 export async function transitionProviderExecution(input: {
   executionId: string;
-  nextStatus: Exclude<ExecutionStatus, "pending">;
+  nextStatus: "reconciliation_required";
   providerRequestId?: string | null;
   resultHash?: string | null;
 }): Promise<boolean> {
   if (
     !SAFE_ID.test(input.executionId) ||
-    ![
-      "succeeded",
-      "failed",
-      "reconciliation_required",
-    ].includes(input.nextStatus) ||
+    input.nextStatus !== "reconciliation_required" ||
     (input.providerRequestId != null &&
       !SAFE_ID.test(input.providerRequestId)) ||
     (input.resultHash != null &&
