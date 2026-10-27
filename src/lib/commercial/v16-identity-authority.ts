@@ -92,16 +92,20 @@ export async function resolveAccountIdentity(input: {
     SELECT
       u.id AS user_id,
       m.account_id
-    FROM ecc_users AS u
+    FROM ecc_auth_identities AS auth
+    INNER JOIN ecc_users AS u
+      ON u.id = auth.user_id
     INNER JOIN ecc_account_members AS m
       ON m.user_id = u.id
     INNER JOIN ecc_accounts AS a
       ON a.id = m.account_id
-    WHERE u.external_subject = $1
-      AND m.account_id = $2
+    WHERE auth.provider = $1
+      AND auth.external_subject = $2
+      AND m.account_id = $3
     LIMIT 1
     `,
     [
+      session.provider,
       session.externalSubject,
       input.accountId,
     ],

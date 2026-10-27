@@ -118,3 +118,20 @@ CREATE INDEX IF NOT EXISTS idx_ecc_request_audit_account
 
 CREATE INDEX IF NOT EXISTS idx_ecc_request_audit_created
   ON ecc_request_audit(created_at);
+
+-- V16.4: Explicit authentication-provider identity mapping.
+-- Legacy external_subject values are deliberately NOT migrated automatically.
+-- Mapping must be established by a verified provider authentication flow.
+CREATE TABLE IF NOT EXISTS ecc_auth_identities (
+  provider TEXT NOT NULL,
+  external_subject TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES ecc_users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (provider, external_subject),
+  CHECK (length(provider) BETWEEN 1 AND 160),
+  CHECK (length(external_subject) BETWEEN 1 AND 255)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ecc_auth_identities_user
+  ON ecc_auth_identities(user_id);
