@@ -14,6 +14,23 @@ import {
 } from "@/lib/buyers/provider-cache";
 
 function isPaidProviderEnabled(request: NextRequest) {
+  /*
+   * V16.1 production containment.
+   *
+   * V15 environment flags are configuration claims, not proof of
+   * authenticated identity, live subscription authority, durable
+   * usage reservation, billing processing or abuse enforcement.
+   *
+   * Paid provider execution remains disabled in production until
+   * V16 supplies and verifies the complete server-side authority.
+   *
+   * This must not be removed merely by enabling environment flags.
+   */
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+
+
   const v15PaidRouteGate =
     evaluatePaidBuyerRouteGate({
       paidProviderEnabled:
@@ -25,7 +42,6 @@ function isPaidProviderEnabled(request: NextRequest) {
   }
 
   if (
-    process.env.NODE_ENV !== "production" &&
     process.env.ECC_ALLOW_UNVERIFIED_PRO_PROVIDER === "true"
   ) {
     return true;
