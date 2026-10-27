@@ -631,6 +631,30 @@ export class PostgresUsageStore {
         const row =
           reservation.rows[0];
 
+        // A paid execution must only settle through the atomic
+        // provider execution + usage transaction.
+        const linkedExecution = await client.query<{
+          linked: boolean;
+        }>(
+          `
+          SELECT EXISTS (
+            SELECT 1 FROM ecc_provider_executions
+            WHERE reservation_id = $1
+              AND account_id = $2
+              AND user_id = $3
+          ) AS linked
+          `,
+          [
+            input.reservationId,
+            input.scope.accountId,
+            input.scope.userId,
+          ],
+        );
+
+        if (linkedExecution.rows[0]?.linked !== false) {
+          throw new Error("provider_execution_requires_atomic_settlement");
+        }
+
         if (
           !row ||
           row.status !== "reserved"
@@ -747,6 +771,30 @@ export class PostgresUsageStore {
 
         const row =
           reservation.rows[0];
+
+        // A paid execution must only settle through the atomic
+        // provider execution + usage transaction.
+        const linkedExecution = await client.query<{
+          linked: boolean;
+        }>(
+          `
+          SELECT EXISTS (
+            SELECT 1 FROM ecc_provider_executions
+            WHERE reservation_id = $1
+              AND account_id = $2
+              AND user_id = $3
+          ) AS linked
+          `,
+          [
+            input.reservationId,
+            input.scope.accountId,
+            input.scope.userId,
+          ],
+        );
+
+        if (linkedExecution.rows[0]?.linked !== false) {
+          throw new Error("provider_execution_requires_atomic_settlement");
+        }
 
         if (
           !row ||

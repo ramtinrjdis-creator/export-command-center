@@ -51,6 +51,10 @@ beforeEach(() => {
       };
     }
 
+    if (sql.includes("FROM ecc_provider_executions")) {
+      return { rows: [{ linked: false }], rowCount: 1 };
+    }
+
     if (sql.includes("UPDATE ecc_usage_counters")) {
       return { rows: [], rowCount: counterRowCount };
     }
@@ -75,6 +79,28 @@ beforeEach(() => {
 });
 
 describe("V16.8D settlement integrity", () => {
+  it("blocks legacy settlement for a linked execution", async () => {
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes("FROM ecc_usage_reservations")) {
+        return { rows: [{ amount: "1", status: "reserved" }], rowCount: 1 };
+      }
+      if (sql.includes("FROM ecc_provider_executions")) {
+        return { rows: [{ linked: true }], rowCount: 1 };
+      }
+      throw new Error("unexpected_sql");
+    });
+
+    await expect(store.commit(input)).rejects.toThrow(
+      "provider_execution_requires_atomic_settlement"
+    );
+    await expect(store.release(input)).rejects.toThrow(
+      "provider_execution_requires_atomic_settlement"
+    );
+    expect(clientQuery.mock.calls.some(([sql]) =>
+      String(sql).includes("UPDATE ecc_usage_counters")
+    )).toBe(false);
+  });
+
   it("commits an existing reservation", async () => {
     const result = await store.commit(input);
     expect(result.committed).toBe(true);

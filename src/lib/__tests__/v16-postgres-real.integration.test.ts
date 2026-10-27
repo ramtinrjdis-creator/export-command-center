@@ -423,4 +423,50 @@ describe.skipIf(!enabled)("V16.8G real PostgreSQL integration", () => {
     }
   });
 
+
+  it("blocks independent commit and release once provider execution exists", async () => {
+    const sc = scope("integration-user-a", "ig-legacy-guard");
+
+    expect((await reserve(
+      sc.userId, sc.periodKey, "ig-legacy-r", 2,
+    )).accepted).toBe(true);
+
+    expect((await claimProviderExecution({
+      executionId: "ig-legacy-e",
+      reservationId: "ig-legacy-r",
+      accountId: sc.accountId,
+      userId: sc.userId,
+      provider: "integration-provider",
+      requestHash: "a".repeat(64),
+    })).created).toBe(true);
+
+    for (const method of ["commit", "release"] as const) {
+      await expect(store[method]({
+        scope: sc, reservationId: "ig-legacy-r", amount: 2,
+      })).rejects.toThrow(
+        "provider_execution_requires_atomic_settlement"
+      );
+    }
+
+    const state = await db.query(`
+      SELECT r.status AS reservation,
+             e.status AS execution,
+             c.committed::int AS committed,
+             c.reserved::int AS reserved
+      FROM ecc_usage_reservations r
+      JOIN ecc_provider_executions e ON e.reservation_id = r.reservation_id
+      JOIN ecc_usage_counters c
+        ON c.account_id = r.account_id AND c.user_id = r.user_id
+       AND c.capability = r.capability AND c.period_key = r.period_key
+      WHERE r.reservation_id = 'ig-legacy-r'
+    `);
+
+    expect(state.rows).toEqual([{
+      reservation: "reserved",
+      execution: "pending",
+      committed: 0,
+      reserved: 2,
+    }]);
+  });
+
 });
