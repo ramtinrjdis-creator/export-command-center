@@ -345,8 +345,11 @@ export class PostgresUsageStore {
     reserved: number;
   }> {
     if (
+      !Number.isSafeInteger(input.amount) ||
       input.amount <= 0 ||
-      !Number.isFinite(input.amount)
+      !Number.isSafeInteger(input.reservedAt) ||
+      !Number.isSafeInteger(input.expiresAt) ||
+      input.expiresAt <= input.reservedAt
     ) {
       return {
         accepted: false,
@@ -635,10 +638,16 @@ export class PostgresUsageStore {
           };
         }
 
-        const amount = Math.min(
-          Number(row.amount),
-          input.amount,
-        );
+        const amount = Number(row.amount);
+
+        if (
+          !Number.isSafeInteger(amount) ||
+          amount <= 0
+        ) {
+          throw new Error(
+            "invalid_usage_reservation_amount",
+          );
+        }
 
         await client.query(
           `
@@ -692,45 +701,29 @@ async function ensureAccountAndUser(
   accountId: string,
   userId: string,
 ): Promise<void> {
-  await client.query(
+  /*
+   * Usage accounting must NEVER create identities or memberships.
+   * Membership must already exist through trusted provisioning.
+   *
+   * Lock the membership row for the reservation transaction.
+   * Concurrent membership deletion must not race this validation.
+   */
+  const membership = await client.query(
     `
-    INSERT INTO ecc_accounts(id)
-    VALUES ($1)
-    ON CONFLICT(id)
-    DO NOTHING
+    SELECT 1
+    FROM ecc_account_members
+    WHERE account_id = $1
+      AND user_id = $2
+    FOR SHARE
     `,
-    [accountId],
+    [accountId, userId],
   );
 
-  await client.query(
-    `
-    INSERT INTO ecc_users(
-      id,
-      external_subject
-    )
-    VALUES ($1,$2)
-    ON CONFLICT(id)
-    DO NOTHING
-    `,
-    [
-      userId,
-      userId,
-    ],
-  );
-
-  await client.query(
-    `
-    INSERT INTO ecc_account_members(
-      account_id,
-      user_id,
-      role
-    )
-    VALUES ($1,$2,'member')
-    ON CONFLICT(account_id,user_id)
-    DO NOTHING
-    `,
-    [accountId,userId],
-  );
+  if (membership.rows.length !== 1) {
+    throw new Error(
+      "usage_account_membership_not_verified",
+    );
+  }
 }
 
 async function readUsageClient(
