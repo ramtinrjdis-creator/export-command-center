@@ -392,6 +392,24 @@ export class PostgresUsageStore {
     }
 
     return withTransaction(async (client) => {
+      /*
+       * Serialize every buyer reservation for this account and period,
+       * including reservations made by different users.
+       *
+       * A hash collision only adds serialization; it cannot grant quota.
+       */
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+        [
+          JSON.stringify([
+            "ecc-buyer-quota-v16",
+            input.scope.accountId,
+            input.scope.capability,
+            input.scope.periodKey,
+          ]),
+        ],
+      );
+
       await ensureAccountAndUser(
         client,
         input.scope.accountId,
@@ -453,9 +471,51 @@ export class PostgresUsageStore {
         throw new Error("invalid_usage_counter");
       }
 
+      /*
+       * The user counter is retained for individual accounting.
+       * Authorization uses the combined consumption of the account.
+       *
+       * This query runs while the account-period advisory lock is held.
+       */
+      const aggregate = await client.query<{
+        committed: string;
+        reserved: string;
+      }>(
+        `
+        SELECT
+          COALESCE(SUM(committed), 0)::text AS committed,
+          COALESCE(SUM(reserved), 0)::text AS reserved
+        FROM ecc_usage_counters
+        WHERE account_id = $1
+          AND capability = $2
+          AND period_key = $3
+        `,
+        [
+          input.scope.accountId,
+          input.scope.capability,
+          input.scope.periodKey,
+        ],
+      );
+
+      const accountCommitted = Number(
+        aggregate.rows[0]?.committed,
+      );
+      const accountReserved = Number(
+        aggregate.rows[0]?.reserved,
+      );
+
+      if (
+        !Number.isSafeInteger(accountCommitted) ||
+        !Number.isSafeInteger(accountReserved) ||
+        accountCommitted < 0 ||
+        accountReserved < 0
+      ) {
+        throw new Error("invalid_account_usage_counter");
+      }
+
       if (
         input.amount > limit ||
-        committed > limit - reserved - input.amount
+        accountCommitted > limit - accountReserved - input.amount
       ) {
         return {
           accepted: false,

@@ -16,6 +16,15 @@ import { PostgresUsageStore } from "../persistence/postgres-commercial";
 
 const tx = vi.mocked(withTransaction);
 const clientQuery = vi.fn();
+const observedSql: string[] = [];
+
+let aggregateOverride:
+  | { committed: string; reserved: string }
+  | null = null;
+
+let lockedCounter:
+  | { committed: string; reserved: string }
+  | null = null;
 
 const store = new PostgresUsageStore();
 
@@ -58,9 +67,40 @@ function queueSuccessfulReservation(
 describe("V16.8B atomic buyer quota", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Clear queued mockResolvedValueOnce responses between tests.
+    clientQuery.mockReset();
+    observedSql.length = 0;
+    aggregateOverride = null;
+    lockedCounter = null;
 
     tx.mockImplementation(async (work) =>
-      work({ query: clientQuery } as never)
+      work({
+        query: async (...args: unknown[]) => {
+          const sql = String(args[0]);
+          observedSql.push(sql);
+
+          if (sql.includes("pg_advisory_xact_lock")) {
+            return { rows: [{}] };
+          }
+
+          if (sql.includes("SUM(committed)")) {
+            return {
+              rows: [aggregateOverride ?? lockedCounter ?? {
+                committed: "0",
+                reserved: "0",
+              }],
+            };
+          }
+
+          const result = await clientQuery(...args);
+
+          if (sql.includes("FOR UPDATE")) {
+            lockedCounter = result.rows[0] ?? null;
+          }
+
+          return result;
+        },
+      } as never)
     );
   });
 
@@ -143,6 +183,43 @@ describe("V16.8B atomic buyer quota", () => {
     });
 
     expect(clientQuery).toHaveBeenCalledTimes(4);
+  });
+
+  it("enforces quota across two different account members", async () => {
+    queueSuccessfulReservation(2, 0);
+
+    aggregateOverride = {
+      committed: "29",
+      reserved: "1",
+    };
+
+    const result = await store.reserve(base);
+
+    expect(result.accepted).toBe(false);
+    expect(clientQuery).toHaveBeenCalledTimes(3);
+    expect(observedSql.some(q =>
+      q.includes("SUM(committed)") &&
+      q.includes("SUM(reserved)")
+    )).toBe(true);
+  });
+
+  it("takes the account-period lock before creating a user counter", async () => {
+    queueSuccessfulReservation(1, 0);
+
+    const result = await store.reserve(base);
+
+    expect(result.accepted).toBe(true);
+
+    const lockIndex = observedSql.findIndex(q =>
+      q.includes("pg_advisory_xact_lock")
+    );
+
+    const insertIndex = observedSql.findIndex(q =>
+      q.includes("INSERT INTO ecc_usage_counters")
+    );
+
+    expect(lockIndex).toBeGreaterThanOrEqual(0);
+    expect(insertIndex).toBeGreaterThan(lockIndex);
   });
 
   it("fails closed if the database transaction fails", async () => {
