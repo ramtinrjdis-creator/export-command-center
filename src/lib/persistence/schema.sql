@@ -135,3 +135,31 @@ CREATE TABLE IF NOT EXISTS ecc_auth_identities (
 
 CREATE INDEX IF NOT EXISTS idx_ecc_auth_identities_user
   ON ecc_auth_identities(user_id);
+
+-- V16.8E: A durable record must exist before paid provider dispatch.
+-- An uncertain result must never be automatically retried.
+CREATE TABLE IF NOT EXISTS ecc_provider_executions (
+  execution_id TEXT PRIMARY KEY,
+  reservation_id TEXT NOT NULL UNIQUE
+    REFERENCES ecc_usage_reservations(reservation_id),
+  account_id TEXT NOT NULL REFERENCES ecc_accounts(id),
+  user_id TEXT NOT NULL REFERENCES ecc_users(id),
+  provider TEXT NOT NULL,
+  request_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN (
+      'pending',
+      'succeeded',
+      'failed',
+      'reconciliation_required'
+    )),
+  provider_request_id TEXT,
+  result_hash TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (length(request_hash) = 64),
+  CHECK (length(provider) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ecc_provider_executions_status
+  ON ecc_provider_executions(status, created_at);
