@@ -17,12 +17,29 @@ if (!databaseUrl) {
   process.exit(2);
 }
 
+if (
+  process.env.NODE_ENV === "production" &&
+  process.env.ECC_DB_SSL === "false"
+) {
+  throw new Error("PostgreSQL TLS cannot be disabled in production.");
+}
+
 const pool = new Pool({
   connectionString: databaseUrl,
   ssl:
     process.env.ECC_DB_SSL === "false"
       ? false
-      : { rejectUnauthorized: false },
+      : {
+          rejectUnauthorized: true,
+          ...(process.env.ECC_DB_CA_CERT
+            ? {
+                ca: process.env.ECC_DB_CA_CERT.replace(
+                  /\\n/g,
+                  String.fromCharCode(10),
+                ),
+              }
+            : {}),
+        },
 });
 
 try {
