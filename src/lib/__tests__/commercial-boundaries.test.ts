@@ -31,3 +31,16 @@ describe("commercial boundary contracts", () => {
     );
   });
 });
+
+describe("competition concentration integrity", () => {
+  it("does not infer concentration from supplier count alone", async () => {
+    const { buildCompetitionContext } = await import("@/lib/context/market-context");
+    const result = buildCompetitionContext({
+      originStatus: "recorded",
+      originShare: 8,
+      supplierCount: 5,
+    });
+    expect(result.concentration).toBe("unknown");
+    expect(result.limitations.join(" ").toLowerCase()).toContain("supplier count alone");
+  });
+});

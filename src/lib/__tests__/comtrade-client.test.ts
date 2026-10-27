@@ -6,13 +6,16 @@ import {
   vi,
 } from "vitest";
 import {
+  clearComtradeCache,
   ComtradeRateLimitError,
   fetchComtradeJson,
+  getComtradeCacheStats,
 } from "../comtrade-client";
 
 describe("comtrade client", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    clearComtradeCache();
   });
 
   it("retries a 429 response using backoff and succeeds", async () => {
@@ -96,3 +99,93 @@ describe("comtrade client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
+
+
+  it("caches successful responses within the cache window", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ reporterCode: 840 }],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const url =
+      "https://example.test/comtrade-cache";
+
+    await fetchComtradeJson(url, {
+      minIntervalMs: 0,
+      maxRetries: 0,
+    });
+
+    await fetchComtradeJson(url, {
+      minIntervalMs: 0,
+      maxRetries: 0,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(getComtradeCacheStats().entries).toBe(1);
+  });
+
+  it("deduplicates concurrent identical requests", async () => {
+    let resolveFetch!: (
+      response: Response
+    ) => void;
+
+    const pending = new Promise<Response>(
+      (resolve) => {
+        resolveFetch = resolve;
+      },
+    );
+
+    const fetchMock = vi
+      .fn()
+      .mockReturnValue(pending);
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const url =
+      "https://example.test/comtrade-dedupe";
+
+    const first =
+      fetchComtradeJson(url, {
+        minIntervalMs: 0,
+        maxRetries: 0,
+      });
+
+    const second =
+      fetchComtradeJson(url, {
+        minIntervalMs: 0,
+        maxRetries: 0,
+      });
+
+    resolveFetch(
+      new Response(
+        JSON.stringify({
+          data: [{ reporterCode: 276 }],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+
+    const [a, b] = await Promise.all([
+      first,
+      second,
+    ]);
+
+    expect(a).toEqual(b);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });

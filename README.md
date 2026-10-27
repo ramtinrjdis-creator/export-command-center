@@ -101,3 +101,21 @@ Do not stage backup bundles, zip files, generated repair directories or ad-hoc s
 ## Commercialization gate
 
 Before paid rollout, perform a provider licensing review covering automated retrieval, caching, redistribution and commercial use. Provider economics and legal terms are part of the product architecture.
+
+## V8 runtime hardening
+
+The zero-cost runtime now includes a short-lived Comtrade response cache and
+single-flight request deduplication. Identical concurrent upstream requests
+share one request, while successful responses are cached briefly to reduce
+repeated scans and rate-limit pressure.
+
+Historical trade enrichment is best-effort: the current year remains
+foundational, while failed historical requests are surfaced as explicit
+coverage warnings instead of taking down an otherwise usable scan.
+
+Commercial Evidence is recalculated when on-demand buyer or supplier evidence
+arrives, so the commercial workspace reflects the evidence currently loaded
+instead of remaining pinned to the initial scan baseline.
+
+The smoke gate also validates buyer-market context, API contract fields,
+health capabilities, origin status and historical coverage metadata.

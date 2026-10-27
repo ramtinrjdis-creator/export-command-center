@@ -70,3 +70,35 @@ describe("market scoring", () => {
     expect(result.score).toBeGreaterThanOrEqual(0);
   });
 });
+
+
+  it("keeps high-growth markets differentiated instead of saturating them at 100", () => {
+    const slower = scoreMarket({
+      importValue: 1_000_000_000,
+      maxImportValue: 1_000_000_000,
+      growthRate: 28,
+      cagr3y: 20,
+      growthConsistency: 1,
+      originStatus: "recorded",
+      evidenceScore: 80,
+      macro: null,
+    });
+
+    const faster = scoreMarket({
+      importValue: 1_000_000_000,
+      maxImportValue: 1_000_000_000,
+      growthRate: 70,
+      cagr3y: 55,
+      growthConsistency: 1,
+      originStatus: "recorded",
+      evidenceScore: 80,
+      macro: null,
+    });
+
+    expect(faster.growthScore).toBeGreaterThan(
+      slower.growthScore,
+    );
+
+    expect(slower.growthScore).toBeLessThan(100);
+    expect(faster.growthScore).toBeLessThanOrEqual(100);
+  });

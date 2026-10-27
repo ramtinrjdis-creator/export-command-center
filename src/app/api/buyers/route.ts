@@ -1,13 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
+import { evaluatePaidBuyerRouteGate } from "@/lib/commercial/v15-route-gate";
 import { getBuyerProvider } from "@/lib/buyers";
+import { buildBuyerExecution } from "@/lib/buyers/execution";
+import { verifyEntitlementToken } from "@/lib/commercial/entitlement-token";
 import { buildBuyerSummary } from "@/lib/buyers/summary";
 import {
   buildBuyerResearch,
   resolveMarketName,
 } from "@/lib/buyer-research";
+import {
+  buildBuyerProviderCacheKey,
+  getCachedBuyerProviderResult,
+} from "@/lib/buyers/provider-cache";
 
-function isPaidProviderEnabled() {
-  return process.env.ENABLE_PAID_BUYER_PROVIDER === "true";
+function isPaidProviderEnabled(request: NextRequest) {
+  const v15PaidRouteGate =
+    evaluatePaidBuyerRouteGate({
+      paidProviderEnabled:
+        process.env.ENABLE_PAID_BUYER_PROVIDER === "true",
+    });
+
+  if (!v15PaidRouteGate.allowed) {
+    return false;
+  }
+
+  if (
+    process.env.NODE_ENV !== "production" &&
+    process.env.ECC_ALLOW_UNVERIFIED_PRO_PROVIDER === "true"
+  ) {
+    return true;
+  }
+
+  const token = request.headers.get("x-ecc-entitlement-token");
+  const secret = process.env.ECC_ENTITLEMENT_SECRET;
+
+  return verifyEntitlementToken(
+    token,
+    secret,
+    "buyer_intelligence",
+  ).valid;
 }
 
 export async function GET(request: NextRequest) {
@@ -47,19 +78,34 @@ export async function GET(request: NextRequest) {
 
   let providerFallbackReason: string | null = null;
 
-  if (isPaidProviderEnabled()) {
-    const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 10;
+  if (isPaidProviderEnabled(request)) {
+    const safeLimit =
+      Number.isInteger(limit) && limit > 0
+        ? Math.min(limit, 25)
+        : 10;
     const provider = getBuyerProvider();
-
+    const cacheKey = buildBuyerProviderCacheKey({
+      provider: provider.name,
+      hsCode,
+      marketCode,
+      productDescription,
+      limit: safeLimit,
+    });
+    let cacheHit = false;
     let result: Awaited<ReturnType<typeof provider.searchBuyers>>;
 
     try {
-      result = await provider.searchBuyers({
-        hsCode,
-        marketCountryCode: marketCode,
-        productDescription: productDescription || undefined,
-        limit: safeLimit,
-      });
+      const cached = await getCachedBuyerProviderResult(
+        cacheKey,
+        () => provider.searchBuyers({
+          hsCode,
+          marketCountryCode: marketCode,
+          productDescription: productDescription || undefined,
+          limit: safeLimit,
+        }),
+      );
+      result = cached.value;
+      cacheHit = cached.hit;
     } catch (error) {
       console.error("Buyer provider error:", error);
 
@@ -80,7 +126,23 @@ export async function GET(request: NextRequest) {
     }
 
     if (result.status !== "unavailable") {
-      const analyzedBuyers = result.buyers.map((buyer) => buildBuyerSummary(buyer));
+      const analyzedBuyers = result.buyers.map((buyer) => {
+        const summary = buildBuyerSummary(buyer);
+
+        return {
+          ...buyer,
+          company: buyer.companyName,
+          name: buyer.companyName,
+          country: buyer.country,
+          matchedShipments: buyer.matchingShipments,
+          intelligence: summary.intelligence,
+          evidence: summary.evidence,
+          verification: summary.verification,
+          readiness: summary.readiness,
+          commercial: buildBuyerExecution(buyer),
+        };
+      });
+
       return NextResponse.json({
         ok: true,
         available: true,
@@ -93,6 +155,12 @@ export async function GET(request: NextRequest) {
         marketCountryCode: marketCode,
         buyers: analyzedBuyers,
         providerMeta: result.meta,
+        providerUsage: {
+          cache: cacheHit ? "hit" : "miss",
+          requestCostCredits: result.meta.requestCost,
+          creditsRemaining: result.meta.creditsRemaining,
+          accounting: "provider-reported-credits",
+        },
       });
     }
 
@@ -121,6 +189,12 @@ export async function GET(request: NextRequest) {
     marketCountryCode: marketCode,
     buyers: [],
     research,
+    providerUsage: {
+      cache: "none",
+      requestCostCredits: null,
+      creditsRemaining: null,
+      accounting: "not-applicable",
+    },
     summary: {
       total: 0,
       highSignal: 0,

@@ -10,12 +10,17 @@
     "test": "vitest run",
     "check": "npm run test && npm run lint && npx tsc --noEmit && git diff --check && npm run build",
     "smoke": "node scripts/ecc-smoke.mjs",
-    "full-gate": "node scripts/ecc-full-gate.mjs"
+    "full-gate": "node scripts/ecc-full-gate.mjs",
+    "db:check": "node scripts/ecc-db.mjs check",
+    "db:init": "node scripts/ecc-db.mjs init"
   },
   "dependencies": {
-    "next": "16.3.5",
+    "@types/pg": "^8.23.1",
+    "next": "^16.3.8",
+    "pg": "^8.23.1",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -27,5 +32,8 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.1"
+  },
+  "overrides": {
+    "source-map-js": "1.2.2"
   }
 }

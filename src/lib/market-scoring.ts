@@ -37,13 +37,23 @@ function clamp(value: number, min = 0, max = 100) {
 }
 
 function normalizeGrowth(value: number | null) {
-  if (value === null || Number.isNaN(value)) return 50;
-  return clamp(50 + value * 2.2);
+  if (value === null || Number.isNaN(value)) {
+    return 50;
+  }
+
+  return clamp(
+    50 + 50 * Math.tanh(value / 40),
+  );
 }
 
 function normalizeCagr(value: number | null) {
-  if (value === null || Number.isNaN(value)) return 50;
-  return clamp(50 + value * 2.0);
+  if (value === null || Number.isNaN(value)) {
+    return 50;
+  }
+
+  return clamp(
+    50 + 50 * Math.tanh(value / 45),
+  );
 }
 
 export function scoreMarket(input: MarketScoreInput): MarketScoreResult {

@@ -1,6 +1,6 @@
 "use client";
 import { buildMarketSnapshot, compareMarketSnapshots, readSavedMarketSnapshot, saveMarketSnapshot } from "@/lib/monitoring";
-import { FormEvent, useMemo, useState, useSyncExternalStore } from "react";
+import { FormEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 type EvidenceBreakdownItem = {
   points: number;
@@ -536,6 +536,7 @@ const [product, setProduct] = useState("Coffee");
   const [supplierLoading, setSupplierLoading] = useState(false);
   const [supplierError, setSupplierError] = useState("");
   const [supplierMarketKey, setSupplierMarketKey] = useState("");
+  const selectionRevision = useRef(0);
 
   const selectedCountry = COUNTRIES.find((c) => String(c.code) === originCode) || COUNTRIES.find((c) => c.code === 364)!;
 
@@ -562,7 +563,10 @@ const [product, setProduct] = useState("Coffee");
       : `market:${nameOf(market).trim().toLowerCase()}`;
   }
 
-  function focusWorkspace(market: Market) {
+  function selectMarket(
+    market: Market,
+    options?: { proIndex?: number },
+  ) {
     const targetKey = marketKey(market);
 
     const index = rankedMarkets.findIndex(
@@ -570,7 +574,28 @@ const [product, setProduct] = useState("Coffee");
     );
 
     setSelectedMarket(market);
-    setProMarketIndex(index >= 0 ? index : 0);
+    setProMarketIndex(
+      options?.proIndex ?? (index >= 0 ? index : 0),
+    );
+
+    setBuyerLoading(false);
+    setBuyerError("");
+    setBuyers([]);
+    setBuyerProvider(null);
+    setBuyerFallbackReason(null);
+    setBuyerResearch(null);
+
+    setSupplierLoading(false);
+    setSupplierLandscape(null);
+    setSupplierError("");
+    setSupplierMarketKey("");
+  }
+
+  function focusWorkspace(market: Market) {
+    const nextRevision = selectionRevision.current + 1;
+    selectionRevision.current = nextRevision;
+
+    selectMarket(market);
 
     window.setTimeout(() => {
       document.getElementById("decision-workspace")?.scrollIntoView({
@@ -746,14 +771,19 @@ const [product, setProduct] = useState("Coffee");
     setLoading(true);
     setError("");
     setSearched(false);
+    selectionRevision.current += 1;
     setMarkets([]);
     setScreening(null);
     setSelectedMarket(null);
     setProMarketIndex(0);
     setBuyers([]);
+    setBuyerLoading(false);
     setBuyerError("");
+    setBuyerProvider(null);
+    setBuyerFallbackReason(null);
     setBuyerResearch(null);
     setSupplierLandscape(null);
+    setSupplierLoading(false);
     setSupplierError("");
     setSupplierMarketKey("");
 
@@ -766,6 +796,10 @@ const [product, setProduct] = useState("Coffee");
       const rankedNextMarkets = [...nextMarkets].sort(
         (a, b) => scoreOf(b) - scoreOf(a),
       );
+
+      selectionRevision.current += 1;
+      const nextRevision = selectionRevision.current + 1;
+      selectionRevision.current = nextRevision;
 
       setMarkets(nextMarkets);
       setSelectedMarket(rankedNextMarkets[0] ?? null);
@@ -792,13 +826,15 @@ const [product, setProduct] = useState("Coffee");
   }
 
   async function investigate(market: Market) {
-    setSelectedMarket(market);
+    const nextRevision = selectionRevision.current + 1;
+    selectionRevision.current = nextRevision;
+
+    selectMarket(market);
+    const requestRevision = nextRevision;
+
     setBuyerLoading(true);
     setBuyerError("");
-    setBuyers([]);
-    setBuyerProvider(null);
-    setBuyerFallbackReason(null);
-    setBuyerResearch(null);
+
     try {
       const params = new URLSearchParams({
         hsCode,
@@ -807,18 +843,49 @@ const [product, setProduct] = useState("Coffee");
         productDescription: product,
         limit: "10",
       });
+
       const response = await fetch(`/api/buyers?${params.toString()}`);
       const data = (await response.json()) as BuyerResponse;
-      if (!response.ok || data.ok === false) throw new Error(data.error || "Buyer research unavailable.");
+
+      if (requestRevision !== selectionRevision.current) {
+        return;
+      }
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(
+          data.error || "Buyer research unavailable.",
+        );
+      }
+
       setBuyers(data.buyers ?? []);
       setBuyerProvider(data.provider ?? null);
       setBuyerFallbackReason(data.providerFallbackReason ?? null);
       setBuyerResearch(data.research ?? null);
-      window.setTimeout(() => document.getElementById("buyers")?.scrollIntoView({ behavior: "smooth" }), 60);
+
+      window.setTimeout(() => {
+        if (requestRevision !== selectionRevision.current) return;
+
+        document
+          .getElementById("buyers")
+          ?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+      }, 60);
     } catch (err) {
-      setBuyerError(err instanceof Error ? err.message : "Buyer research unavailable.");
+      if (requestRevision !== selectionRevision.current) {
+        return;
+      }
+
+      setBuyerError(
+        err instanceof Error
+          ? err.message
+          : "Buyer research unavailable.",
+      );
     } finally {
-      setBuyerLoading(false);
+      if (requestRevision === selectionRevision.current) {
+        setBuyerLoading(false);
+      }
     }
   }
 
@@ -829,6 +896,8 @@ const [product, setProduct] = useState("Coffee");
       setSupplierError("Supplier evidence requires a valid destination market.");
       return;
     }
+
+    const requestRevision = selectionRevision.current;
 
     setSupplierLoading(true);
     setSupplierError("");
@@ -857,12 +926,20 @@ const [product, setProduct] = useState("Coffee");
         );
       }
 
+      if (requestRevision !== selectionRevision.current) {
+        return;
+      }
+
       if (!data.supplierLandscape) {
         throw new Error("Supplier landscape data was not returned.");
       }
 
       setSupplierLandscape(data.supplierLandscape);
     } catch (err) {
+      if (requestRevision !== selectionRevision.current) {
+        return;
+      }
+
       setSupplierLandscape(null);
       setSupplierError(
         err instanceof Error
@@ -870,7 +947,9 @@ const [product, setProduct] = useState("Coffee");
           : "Supplier landscape unavailable.",
       );
     } finally {
-      setSupplierLoading(false);
+      if (requestRevision === selectionRevision.current) {
+        setSupplierLoading(false);
+      }
     }
   }
 
@@ -903,12 +982,25 @@ const [product, setProduct] = useState("Coffee");
   const commercialBlockers =
     commercialEvidence?.blockers ?? [];
 
+  const buyerProviderConfigured =
+    typeof buyerProvider === "string"
+      ? buyerProvider !== "free-research" &&
+        buyerProvider !== "research"
+      : Boolean(
+          buyerProvider &&
+          buyerProvider.configured !== false &&
+          buyerProvider.source !== "free-research" &&
+          buyerProvider.mode !== "free-research",
+        );
+
   const buyerLayerLabel =
     buyers.length > 0
       ? "Provider-backed results"
       : buyerResearch
         ? "Free research mode"
-        : "Not checked";
+        : buyerProviderConfigured
+          ? "Provider configured · no verified records"
+          : "Not checked";
 
   const supplierLayerLabel =
     supplierLoadedForFocus
@@ -963,10 +1055,11 @@ const [product, setProduct] = useState("Coffee");
           <div className="ecc-v7-command-rail-inner" aria-label="Export intelligence workflow">
             <a className="ecc-v7-command-step" href="#top"><span>01</span><span>Scan</span></a>
             <a className="ecc-v7-command-step" href="#market-results"><span>02</span><span>Markets</span></a>
-            <a className="ecc-v7-command-step" href="#evidence"><span>03</span><span>Evidence</span></a>
-            <a className="ecc-v7-command-step" href="#decision-workspace"><span>04</span><span>Decision</span></a>
+            <a className="ecc-v7-command-step" href="#decision-workspace"><span>03</span><span>Decision</span></a>
+            <a className="ecc-v7-command-step" href="#evidence"><span>04</span><span>Evidence</span></a>
             <a className="ecc-v7-command-step" href="#buyers"><span>05</span><span>Buyers</span></a>
-            <a className="ecc-v7-command-step" href="#pro"><span>06</span><span>Pro</span></a>
+            <a className="ecc-v7-command-step" href="#commercial-command-center"><span>06</span><span>Commercial</span></a>
+            <a className="ecc-v7-command-step" href="#pro"><span>07</span><span>Pro</span></a>
           </div>
         </div>
       </div>
@@ -1084,7 +1177,7 @@ const [product, setProduct] = useState("Coffee");
             <div className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-4">
               <Stat label="Markets returned" value={num(screening.globalMarketsReturned)} detail="Source response" />
               <Stat label="Candidates" value={num(screening.screenedMarkets ?? markets.length)} detail="Passed screen" />
-              <Stat label="Origin checks" value={num(screening.originQueries)} detail="Bilateral checks" />
+              <Stat label="Origin queries" value={num(screening.originQueries)} detail="Bilateral query count" />
               <Stat
                 label="Origin data"
                 value={
@@ -1656,7 +1749,7 @@ const [product, setProduct] = useState("Coffee");
         <div className="mx-auto max-w-7xl px-5 py-16 md:px-8 md:py-20">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">03 / Trust & commercial readiness</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">04 / Trust & commercial readiness</div>
               <h2 className="mt-3 text-3xl font-semibold tracking-[-0.035em] text-white md:text-4xl">What the current evidence can—and cannot—support.</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-white/40">This layer keeps the market signal separate from the claims that still require origin, buyer and market-access verification.</p>
             </div>
@@ -1802,7 +1895,7 @@ const [product, setProduct] = useState("Coffee");
 <section id="buyers" className="scroll-mt-24">
         <div className="mx-auto max-w-7xl px-5 py-14 md:px-8 md:py-20">
           <div className="grid gap-8 lg:grid-cols-[.82fr_1.18fr]">
-            <div><div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">02 / Buyer intelligence</div><h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">From market signal to buyer research.</h2><p className="mt-4 max-w-lg text-sm leading-7 text-white/38">Buyer evidence is a separate layer. Free mode keeps discovery and verification distinct without inventing company records.</p>{selectedMarket ? <div className="mt-6 rounded-2xl border border-white/8 bg-white/[0.025] p-4"><div className="text-[9px] uppercase tracking-[0.16em] text-white/20">Selected market</div><div className="mt-2 text-sm text-white/75">{selectedName}</div><div className="mt-1 text-xs text-white/25">{product} · HS {hsCode}</div></div> : null}</div>
+            <div><div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">05 / Buyer intelligence</div><h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">From market signal to buyer research.</h2><p className="mt-4 max-w-lg text-sm leading-7 text-white/38">Buyer evidence is a separate layer. Free mode keeps discovery and verification distinct without inventing company records.</p>{selectedMarket ? <div className="mt-6 rounded-2xl border border-white/8 bg-white/[0.025] p-4"><div className="text-[9px] uppercase tracking-[0.16em] text-white/20">Selected market</div><div className="mt-2 text-sm text-white/75">{selectedName}</div><div className="mt-1 text-xs text-white/25">{product} · HS {hsCode}</div></div> : null}</div>
 
             <div className="rounded-[28px] border border-white/8 bg-white/[0.02] p-5 md:p-6"><div className="flex items-center justify-between gap-4"><div><div className="text-sm font-medium text-white/85">Research workflow</div><div className="mt-1 text-xs text-white/25">Find → Verify → Record</div></div><span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[9px] uppercase tracking-[0.14em] text-white/25">No fake buyers</span></div>
 
@@ -1851,7 +1944,7 @@ const [product, setProduct] = useState("Coffee");
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/65">
-                04 / Commercial command center
+                06 / Commercial command center
               </div>
 
               <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white md:text-4xl">
@@ -2413,8 +2506,11 @@ const [product, setProduct] = useState("Coffee");
                         key={`${name}-${index}`}
                         type="button"
                         onClick={() => {
-                          setProMarketIndex(index);
-                          setSelectedMarket(item);
+                          const nextRevision =
+                            selectionRevision.current + 1;
+                          selectionRevision.current = nextRevision;
+
+                          selectMarket(item, { proIndex: index });
                         }}
                         className={`rounded-xl border px-3 py-2 text-[10px] font-semibold transition ${
                           active
@@ -2556,9 +2652,9 @@ const [product, setProduct] = useState("Coffee");
                     {
                       label: "Buyer evidence",
                       state: buyers.length ? "Available" : "Not verified",
-                      detail: buyerProvider
+                      detail: buyerProviderConfigured
                         ? "Configured buyer layer"
-                        : "No verified provider result",
+                        : "Free research / no verified provider result",
                     },
                     {
                       label: "Market access",
@@ -2639,13 +2735,15 @@ const [product, setProduct] = useState("Coffee");
                       Status
                     </span>
                     <span className={`text-[10px] font-semibold ${
-                      buyerProvider
+                      buyerProviderConfigured
                         ? "text-emerald-300/75"
                         : "text-amber-200/65"
                     }`}>
-                      {buyerProvider
+                      {buyerProviderConfigured
                         ? "Provider configured"
-                        : "Research only"}
+                        : buyerResearch
+                          ? "Free research mode"
+                          : "Not checked"}
                     </span>
                   </div>
 

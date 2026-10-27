@@ -9,6 +9,8 @@ import { buildDataTrust } from "@/lib/trust-layer";
 import { buildMarketAccess } from "@/lib/market-access";
 import { buildCommercialReadiness } from "@/lib/commercial-readiness";
 import { buildCommercialEvidence } from "@/lib/commercial-evidence";
+import { buildCommercialDecision } from "@/lib/commercial/commercial-decision";
+import { buildDecisionWorkspace } from "@/lib/commercial/decision-workspace";
 import {
   buildCompetitionContext,
   buildMarketAccessContext,
@@ -300,13 +302,68 @@ export async function GET(request: Request) {
 
   try {
     const years = [year, year - 1, year - 2, year - 3];
-    const [current, previous, twoBack, threeBack] = await Promise.all(
-      years.map((value) => fetchYear(hsCode, String(value)))
+
+    /*
+     * Current-year trade is foundational.
+     * Historical years are enrichment layers: if one historical request
+     * fails after retries, keep the current scan alive and surface the gap.
+     */
+    const yearResults = await Promise.allSettled(
+      years.map((value) =>
+        fetchYear(hsCode, String(value)),
+      ),
     );
 
-    const previousMap = new Map(previous.map((market) => [market.countryCode, market.importValue]));
-    const twoBackMap = new Map(twoBack.map((market) => [market.countryCode, market.importValue]));
-    const threeBackMap = new Map(threeBack.map((market) => [market.countryCode, market.importValue]));
+    const currentResult = yearResults[0];
+
+    if (currentResult?.status !== "fulfilled") {
+      throw currentResult?.reason ??
+        new Error("Current trade data unavailable.");
+    }
+
+    const current = currentResult.value;
+
+    const historicalWarnings: string[] = [];
+
+    const historicalValues = yearResults.slice(1).map(
+      (result, index) => {
+        if (result.status === "fulfilled") {
+          return result.value;
+        }
+
+        const failedYear = years[index + 1];
+
+        historicalWarnings.push(
+          `${failedYear} historical trade data was unavailable after retries.`,
+        );
+
+        return [];
+      },
+    );
+
+    const [previous, twoBack, threeBack] =
+      historicalValues;
+
+    const previousMap = new Map(
+      previous.map((market) => [
+        market.countryCode,
+        market.importValue,
+      ]),
+    );
+
+    const twoBackMap = new Map(
+      twoBack.map((market) => [
+        market.countryCode,
+        market.importValue,
+      ]),
+    );
+
+    const threeBackMap = new Map(
+      threeBack.map((market) => [
+        market.countryCode,
+        market.importValue,
+      ]),
+    );
 
     const currentMarkets = current.filter(
       (market) =>
@@ -328,6 +385,10 @@ export async function GET(request: Request) {
     >();
 
     const originValueMap = new Map<number, number | null>();
+
+    const providerWarnings = [
+      ...historicalWarnings,
+    ];
 
     /*
      * Origin lookup already returns destination reporters for the selected
@@ -369,11 +430,13 @@ export async function GET(request: Request) {
           }
         }
       } catch (error) {
-        if (error instanceof ComtradeRateLimitError) {
-          throw error;
-        }
+        console.warn("Origin batch lookup unavailable:", error);
 
-        console.error("Origin batch lookup failed:", error);
+        providerWarnings.push(
+          error instanceof ComtradeRateLimitError
+            ? "Origin-specific trade evidence was temporarily rate-limited and is unavailable for this scan."
+            : "Origin-specific trade evidence could not be retrieved for this scan.",
+        );
 
         for (const market of currentMarkets) {
           const code = Number(market.countryCode);
@@ -683,6 +746,28 @@ export async function GET(request: Request) {
           competition,
         };
 
+        const commercialDecision = buildCommercialDecision({
+          marketPotential: opportunity.score,
+          evidenceScore: intelligence.evidenceScore,
+          originStatus,
+          competitionStatus: competition.status,
+          buyerStatus: "unavailable",
+          marketAccessStatus: marketAccess.status,
+          growthRate,
+        });
+
+        const decisionWorkspace = buildDecisionWorkspace({
+          plan: "free",
+          decision: commercialDecision,
+          evidence: {
+            market: commercialEvidence.layers.market,
+            origin: commercialEvidence.layers.origin,
+            competition: commercialEvidence.layers.competition,
+            buyers: commercialEvidence.layers.buyers,
+            marketAccess: commercialEvidence.layers.marketAccess,
+          },
+        });
+
         const decision = buildDecisionProfile({
           ...enrichedMarket,
           marketAccess: marketAccessContext,
@@ -697,6 +782,8 @@ export async function GET(request: Request) {
         return {
           ...enrichedMarket,
           decision,
+          commercialDecision,
+          decisionWorkspace,
           researchPlan,
         };
       })
@@ -704,6 +791,33 @@ export async function GET(request: Request) {
 
     const strongCount = markets.filter((market) => market.opportunity?.signal === "strong-validation-target").length;
     const validationCount = markets.filter((market) => market.opportunity?.signal === "validation-target").length;
+
+    const commercialSignalCounts = markets.reduce(
+      (counts, market) => {
+        const signal = market.commercialDecision?.signal;
+        if (signal) counts[signal] = (counts[signal] ?? 0) + 1;
+        return counts;
+      },
+      {
+        GO: 0,
+        VALIDATE: 0,
+        WATCH: 0,
+        DATA_GAP: 0,
+      } as Record<"GO" | "VALIDATE" | "WATCH" | "DATA_GAP", number>,
+    );
+
+    const commercialPriorityMarkets = markets
+      .filter((market) => market.commercialDecision?.signal !== "DATA_GAP")
+      .slice(0, 5)
+      .map((market, index) => ({
+        rank: index + 1,
+        countryCode: market.countryCode,
+        country: market.country,
+        signal: market.commercialDecision?.signal ?? "DATA_GAP",
+        score: market.commercialDecision?.score ?? 0,
+        confidence: market.commercialDecision?.confidence ?? "low",
+        nextAction: market.commercialDecision?.nextAction ?? "Close evidence gaps.",
+      }));
 
     return NextResponse.json({
       ok: true,
@@ -717,7 +831,9 @@ export async function GET(request: Request) {
           "Destination import demand is distinct from origin-specific export evidence.",
           "Missing bilateral evidence is not interpreted as zero trade.",
           "Buyer, market-access and competitive claims require separate evidence layers.",
+          ...providerWarnings,
         ],
+        warnings: providerWarnings,
       },
       source: "UN Comtrade + World Bank",
       fetchedAt,
@@ -739,13 +855,24 @@ export async function GET(request: Request) {
             : Array.from(originStatusMap.values()).every(
                 (status) =>
                   status === "recorded" ||
-                  status === "no_record"
+                  status === "no_record",
               )
               ? "checked"
               : "partial",
 
+        historicalDataAvailability:
+          historicalWarnings.length === 0
+            ? "complete"
+            : historicalWarnings.length === 3
+              ? "unavailable"
+              : "partial",
+
+        warnings: providerWarnings,
+
         strongSignals: strongCount,
         validationTargets: validationCount,
+        commercialSignalCounts,
+        commercialPriorityMarkets,
         methodology:
           "Candidate discovery pre-screens the full positive destination dataset using import demand, year-over-year growth, 3-year trend, evidence coverage and origin-specific checks; the top 20 are then enriched with macro context and final decision layers. Missing evidence is never treated as zero trade. Upstream rate limiting or failed evidence retrieval is surfaced as unavailable rather than synthesized.",
       },

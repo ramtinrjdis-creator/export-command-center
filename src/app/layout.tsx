@@ -14,18 +14,40 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Export Command Center",
+  title: {
+    default: "Export Command Center",
+    template: "%s · Export Command Center",
+  },
   description:
-    "Evidence-driven export market intelligence using international trade data.",
+    "Evidence-driven export intelligence for market discovery, buyer research and commercial validation.",
+  keywords: [
+    "export intelligence",
+    "trade data",
+    "market discovery",
+    "buyer research",
+    "export markets",
+    "UN Comtrade",
+  ],
+  applicationName: "Export Command Center",
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+      </body>
     </html>
   );
 }

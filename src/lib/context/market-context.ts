@@ -42,6 +42,7 @@ export function buildCompetitionContext(input: {
   originStatus: string | null;
   originShare: number | null;
   supplierCount?: number | null;
+  topSupplierShare?: number | null;
 }): CompetitionContext {
   const supplierCount =
     typeof input.supplierCount === "number"
@@ -52,16 +53,34 @@ export function buildCompetitionContext(input: {
   const limitations: string[] = [];
 
   if (supplierCount !== null) {
+    const topSupplierShare =
+      typeof input.topSupplierShare === "number" &&
+      Number.isFinite(input.topSupplierShare)
+        ? Math.max(0, Math.min(100, input.topSupplierShare))
+        : null;
+
     const concentration =
-      supplierCount <= 3
-        ? "high"
-        : supplierCount <= 8
-          ? "medium"
-          : "low";
+      topSupplierShare === null
+        ? "unknown"
+        : topSupplierShare >= 50
+          ? "high"
+          : topSupplierShare >= 25
+            ? "medium"
+            : "low";
 
     signals.push(
-      `${supplierCount} supplier markets are represented in the current competitive view.`,
+      `${supplierCount} supplier-country records are represented in the current competitive view.`,
     );
+
+    if (topSupplierShare !== null) {
+      signals.push(
+        `Largest represented supplier share is ${topSupplierShare.toFixed(1)}%.`,
+      );
+    } else {
+      limitations.push(
+        "Supplier count alone is not treated as market concentration; supplier share evidence is required.",
+      );
+    }
 
     return {
       status: "limited",
