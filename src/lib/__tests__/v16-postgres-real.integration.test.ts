@@ -6,6 +6,7 @@ import { getPostgresPool } from "../persistence/postgres";
 import { PostgresUsageStore } from "../persistence/postgres-commercial";
 import { claimProviderExecution } from "../persistence/provider-execution";
 import { settleProviderExecution } from "../persistence/provider-settlement";
+import { consumeAbuseBudget } from "../persistence/durable-abuse-control";
 import { recordReconciliationEvidence } from "../persistence/provider-reconciliation";
 
 const url = process.env.ECC_TEST_DATABASE_URL;
@@ -557,6 +558,79 @@ describe.skipIf(!enabled)("V16.8G real PostgreSQL integration", () => {
       committed: 0,
       reserved: 2,
     }]);
+  });
+
+
+  it("enforces durable abuse budget across 20 concurrent requests", async () => {
+    const policy = {
+      accountId: "integration-account",
+      userId: "integration-user-a",
+      capability: "ig-abuse-concurrent",
+      limit: 3,
+      windowMs: 60000,
+    };
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => consumeAbuseBudget(policy)),
+    );
+
+    const accepted = results.filter(result => result.allowed);
+    const denied = results.filter(result => !result.allowed);
+
+    expect(accepted).toHaveLength(3);
+    expect(denied).toHaveLength(17);
+
+    expect(
+      accepted.map(result => result.used).sort((a, b) =>
+        Number(a) - Number(b)
+      ),
+    ).toEqual([1, 2, 3]);
+
+    const scopeKey = JSON.stringify([
+      "ecc-abuse-v16",
+      policy.accountId,
+      policy.userId,
+      policy.capability,
+      policy.windowMs,
+    ]);
+
+    const stored = await db.query(
+      `
+      SELECT count::int AS used
+      FROM ecc_abuse_counters
+      WHERE scope_key = $1
+      `,
+      [scopeKey],
+    );
+
+    expect(stored.rows).toEqual([{ used: 3 }]);
+
+    // Another request in the same window cannot consume more budget.
+    const additional = await consumeAbuseBudget(policy);
+
+    expect(additional.allowed).toBe(false);
+
+    const after = await db.query(
+      `
+      SELECT count::int AS used
+      FROM ecc_abuse_counters
+      WHERE scope_key = $1
+      `,
+      [scopeKey],
+    );
+
+    expect(after.rows).toEqual([{ used: 3 }]);
+
+    // A different verified member has a distinct accounting scope.
+    const otherMember = await consumeAbuseBudget({
+      ...policy,
+      userId: "integration-user-b",
+    });
+
+    expect(otherMember).toMatchObject({
+      allowed: true,
+      used: 1,
+    });
   });
 
 });
