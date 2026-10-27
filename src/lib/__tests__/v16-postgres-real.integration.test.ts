@@ -274,4 +274,153 @@ describe.skipIf(!enabled)("V16.8G real PostgreSQL integration", () => {
       execution_status: "reconciliation_required",
     });
   });
+
+  it("settles concurrent conflicting outcomes exactly once", async () => {
+    const sc = scope("integration-user-a", "ig-concurrent-settlement");
+
+    expect((await reserve(
+      sc.userId, sc.periodKey, "ig-race-r", 2,
+    )).accepted).toBe(true);
+
+    expect((await claimProviderExecution({
+      executionId: "ig-race-e",
+      reservationId: "ig-race-r",
+      accountId: sc.accountId,
+      userId: sc.userId,
+      provider: "integration-provider",
+      requestHash: "f".repeat(64),
+    })).created).toBe(true);
+
+    // These are controlled test outcomes, not real provider responses.
+    const [success, failure] = await Promise.all([
+      settleProviderExecution({
+        scope: sc,
+        reservationId: "ig-race-r",
+        executionId: "ig-race-e",
+        outcome: "succeeded",
+        resultHash: "a".repeat(64),
+      }),
+      settleProviderExecution({
+        scope: sc,
+        reservationId: "ig-race-r",
+        executionId: "ig-race-e",
+        outcome: "failed",
+      }),
+    ]);
+
+    expect([success.applied, failure.applied].sort())
+      .toEqual([false, true]);
+
+    const state = await db.query(`
+      SELECT r.status AS reservation,
+             e.status AS execution,
+             c.committed::int AS committed,
+             c.reserved::int AS reserved
+      FROM ecc_usage_reservations r
+      JOIN ecc_provider_executions e
+        ON e.reservation_id = r.reservation_id
+      JOIN ecc_usage_counters c
+        ON c.account_id = r.account_id
+       AND c.user_id = r.user_id
+       AND c.capability = r.capability
+       AND c.period_key = r.period_key
+      WHERE r.reservation_id = 'ig-race-r'
+    `);
+
+    expect(state.rows).toHaveLength(1);
+
+    if (success.applied) {
+      expect(state.rows[0]).toEqual({
+        reservation: "committed",
+        execution: "succeeded",
+        committed: 2,
+        reserved: 0,
+      });
+    } else {
+      expect(state.rows[0]).toEqual({
+        reservation: "released",
+        execution: "failed",
+        committed: 0,
+        reserved: 0,
+      });
+    }
+  });
+
+  it("rolls back all changes when the final execution UPDATE fails", async () => {
+    const sc = scope("integration-user-b", "ig-final-update-rollback");
+
+    expect((await reserve(
+      sc.userId, sc.periodKey, "ig-final-r", 2,
+    )).accepted).toBe(true);
+
+    expect((await claimProviderExecution({
+      executionId: "ig-final-e",
+      reservationId: "ig-final-r",
+      accountId: sc.accountId,
+      userId: sc.userId,
+      provider: "integration-provider",
+      requestHash: "b".repeat(64),
+    })).created).toBe(true);
+
+    // Disposable PostgreSQL only: inject failure at the LAST write.
+    await db.query(`
+      CREATE FUNCTION ecc_integration_reject_final()
+      RETURNS trigger LANGUAGE plpgsql AS $fn$
+      BEGIN
+        IF NEW.execution_id = 'ig-final-e' THEN
+          RAISE EXCEPTION 'integration_final_update_failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $fn$;
+    `);
+
+    await db.query(`
+      CREATE TRIGGER ecc_integration_final_failure
+      BEFORE UPDATE ON ecc_provider_executions
+      FOR EACH ROW
+      EXECUTE FUNCTION ecc_integration_reject_final()
+    `);
+
+    try {
+      await expect(settleProviderExecution({
+        scope: sc,
+        reservationId: "ig-final-r",
+        executionId: "ig-final-e",
+        outcome: "succeeded",
+        resultHash: "c".repeat(64),
+      })).rejects.toThrow("integration_final_update_failure");
+
+      const state = await db.query(`
+        SELECT r.status AS reservation,
+               e.status AS execution,
+               c.committed::int AS committed,
+               c.reserved::int AS reserved
+        FROM ecc_usage_reservations r
+        JOIN ecc_provider_executions e
+          ON e.reservation_id = r.reservation_id
+        JOIN ecc_usage_counters c
+          ON c.account_id = r.account_id
+         AND c.user_id = r.user_id
+         AND c.capability = r.capability
+         AND c.period_key = r.period_key
+        WHERE r.reservation_id = 'ig-final-r'
+      `);
+
+      expect(state.rows).toEqual([{
+        reservation: "reserved",
+        execution: "pending",
+        committed: 0,
+        reserved: 2,
+      }]);
+    } finally {
+      await db.query(
+        "DROP TRIGGER IF EXISTS ecc_integration_final_failure ON ecc_provider_executions"
+      );
+      await db.query(
+        "DROP FUNCTION IF EXISTS ecc_integration_reject_final()"
+      );
+    }
+  });
+
 });
