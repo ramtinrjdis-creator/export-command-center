@@ -651,7 +651,11 @@ export class PostgresUsageStore {
           row.amount,
         );
 
-        await client.query(
+        if (!Number.isSafeInteger(amount) || amount <= 0) {
+          throw new Error("invalid_usage_reservation_amount");
+        }
+
+        const counterUpdate = await client.query(
           `
           UPDATE ecc_usage_counters
           SET
@@ -674,6 +678,10 @@ export class PostgresUsageStore {
             amount,
           ],
         );
+
+        if (counterUpdate.rowCount !== 1) {
+          throw new Error("usage_counter_update_failed");
+        }
 
         await client.query(
           `
@@ -767,7 +775,7 @@ export class PostgresUsageStore {
           );
         }
 
-        await client.query(
+        const counterUpdate = await client.query(
           `
           UPDATE ecc_usage_counters
           SET
@@ -789,6 +797,10 @@ export class PostgresUsageStore {
             amount,
           ],
         );
+
+        if (counterUpdate.rowCount !== 1) {
+          throw new Error("usage_counter_update_failed");
+        }
 
         await client.query(
           `
