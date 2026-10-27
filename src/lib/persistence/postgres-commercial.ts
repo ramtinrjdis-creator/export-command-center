@@ -3,6 +3,12 @@ import type {
 } from "pg";
 
 import {
+  getMonthlyEquivalentLimit,
+  type CommercialPlan,
+} from "../commercial/plan-policy";
+
+
+import {
   query,
   withTransaction,
 } from "./postgres";
@@ -333,23 +339,37 @@ export class PostgresUsageStore {
     };
   }
 
+  /**
+   * Buyer-provider quota is taken from server-side plan policy.
+   *
+   * authorizedPlan MUST originate from an already verified
+   * subscription; callers must never forward a client-supplied plan.
+   *
+   * The counter row is locked before evaluating quota.
+   * Concurrent reservations for the same scope are serialized.
+   */
   async reserve(input: {
     scope: PostgresUsageScope;
     reservationId: string;
     amount: number;
     reservedAt: number;
     expiresAt: number;
+    authorizedPlan: CommercialPlan;
   }): Promise<{
     accepted: boolean;
     committed: number;
     reserved: number;
   }> {
     if (
+      input.scope.capability !== "buyer_intelligence" ||
+      !["pro_monthly", "pro_yearly"].includes(input.authorizedPlan) ||
       !Number.isSafeInteger(input.amount) ||
       input.amount <= 0 ||
       !Number.isSafeInteger(input.reservedAt) ||
       !Number.isSafeInteger(input.expiresAt) ||
-      input.expiresAt <= input.reservedAt
+      input.expiresAt <= input.reservedAt ||
+      !input.reservationId.trim() ||
+      !input.scope.periodKey.trim()
     ) {
       return {
         accepted: false,
@@ -358,117 +378,155 @@ export class PostgresUsageStore {
       };
     }
 
-    return withTransaction(
-      async (client) => {
-        await ensureAccountAndUser(
-          client,
-          input.scope.accountId,
-          input.scope.userId,
-        );
-
-        /*
-         * Idempotency is established FIRST.
-         *
-         * The old implementation increased the counter before attempting
-         * the reservation INSERT. A replay of the same reservationId could
-         * therefore increase `reserved` more than once.
-         *
-         * INSERT ... ON CONFLICT ... DO NOTHING + RETURNING makes the
-         * reservation itself the source of truth for whether this is a new
-         * reservation.
-         */
-        const inserted =
-          await client.query<{
-            reservation_id: string;
-          }>(
-            `
-            INSERT INTO ecc_usage_reservations (
-              reservation_id,
-              account_id,
-              user_id,
-              capability,
-              period_key,
-              amount,
-              status,
-              reserved_at,
-              expires_at
-            )
-            VALUES (
-              $1,$2,$3,$4,$5,$6,'reserved',$7,$8
-            )
-            ON CONFLICT (reservation_id)
-            DO NOTHING
-            RETURNING reservation_id
-            `,
-            [
-              input.reservationId,
-              input.scope.accountId,
-              input.scope.userId,
-              input.scope.capability,
-              input.scope.periodKey,
-              input.amount,
-              input.reservedAt,
-              input.expiresAt,
-            ],
-          );
-
-        if (inserted.rows.length === 0) {
-          const current =
-            await readUsageClient(
-              client,
-              input.scope,
-            );
-
-          return {
-            accepted: false,
-            committed: current.committed,
-            reserved: current.reserved,
-          };
-        }
-
-        await client.query(
-          `
-          INSERT INTO ecc_usage_counters (
-            account_id,
-            user_id,
-            capability,
-            period_key,
-            committed,
-            reserved
-          )
-          VALUES ($1,$2,$3,$4,0,$5)
-          ON CONFLICT (
-            account_id,
-            user_id,
-            capability,
-            period_key
-          )
-          DO UPDATE SET
-            reserved =
-              ecc_usage_counters.reserved + EXCLUDED.reserved,
-            updated_at = NOW()
-          `,
-          [
-            ...usageKey(
-              input.scope,
-            ),
-            input.amount,
-          ],
-        );
-
-        const current =
-          await readUsageClient(
-            client,
-            input.scope,
-          );
-
-        return {
-          accepted: true,
-          committed: current.committed,
-          reserved: current.reserved,
-        };
-      },
+    const limit = getMonthlyEquivalentLimit(
+      input.authorizedPlan,
+      "buyer_provider_queries",
     );
+
+    if (!Number.isSafeInteger(limit) || limit <= 0) {
+      return {
+        accepted: false,
+        committed: 0,
+        reserved: 0,
+      };
+    }
+
+    return withTransaction(async (client) => {
+      await ensureAccountAndUser(
+        client,
+        input.scope.accountId,
+        input.scope.userId,
+      );
+
+      // Establish a lockable row even for first-time usage.
+      await client.query(
+        `
+        INSERT INTO ecc_usage_counters (
+          account_id,
+          user_id,
+          capability,
+          period_key,
+          committed,
+          reserved
+        )
+        VALUES ($1,$2,$3,$4,0,0)
+        ON CONFLICT (
+          account_id,
+          user_id,
+          capability,
+          period_key
+        )
+        DO NOTHING
+        `,
+        usageKey(input.scope),
+      );
+
+      const locked = await client.query<UsageRow>(
+        `
+        SELECT committed, reserved
+        FROM ecc_usage_counters
+        WHERE
+          account_id = $1
+          AND user_id = $2
+          AND capability = $3
+          AND period_key = $4
+        FOR UPDATE
+        `,
+        usageKey(input.scope),
+      );
+
+      const current = locked.rows[0];
+
+      if (!current) {
+        throw new Error("usage_counter_lock_failed");
+      }
+
+      const committed = Number(current.committed);
+      const reserved = Number(current.reserved);
+
+      if (
+        !Number.isSafeInteger(committed) ||
+        !Number.isSafeInteger(reserved) ||
+        committed < 0 ||
+        reserved < 0
+      ) {
+        throw new Error("invalid_usage_counter");
+      }
+
+      if (
+        input.amount > limit ||
+        committed > limit - reserved - input.amount
+      ) {
+        return {
+          accepted: false,
+          committed,
+          reserved,
+        };
+      }
+
+      const inserted = await client.query<{
+        reservation_id: string;
+      }>(
+        `
+        INSERT INTO ecc_usage_reservations (
+          reservation_id,
+          account_id,
+          user_id,
+          capability,
+          period_key,
+          amount,
+          status,
+          reserved_at,
+          expires_at
+        )
+        VALUES (
+          $1,$2,$3,$4,$5,$6,'reserved',$7,$8
+        )
+        ON CONFLICT (reservation_id)
+        DO NOTHING
+        RETURNING reservation_id
+        `,
+        [
+          input.reservationId,
+          ...usageKey(input.scope),
+          input.amount,
+          input.reservedAt,
+          input.expiresAt,
+        ],
+      );
+
+      if (inserted.rows.length !== 1) {
+        return {
+          accepted: false,
+          committed,
+          reserved,
+        };
+      }
+
+      await client.query(
+        `
+        UPDATE ecc_usage_counters
+        SET
+          reserved = reserved + $5,
+          updated_at = NOW()
+        WHERE
+          account_id = $1
+          AND user_id = $2
+          AND capability = $3
+          AND period_key = $4
+        `,
+        [
+          ...usageKey(input.scope),
+          input.amount,
+        ],
+      );
+
+      return {
+        accepted: true,
+        committed,
+        reserved: reserved + input.amount,
+      };
+    });
   }
 
   async commit(
