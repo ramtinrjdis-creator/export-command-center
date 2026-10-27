@@ -163,3 +163,52 @@ CREATE TABLE IF NOT EXISTS ecc_provider_executions (
 
 CREATE INDEX IF NOT EXISTS idx_ecc_provider_executions_status
   ON ecc_provider_executions(status, created_at);
+
+-- V16.8H-B: evidence audit only; this table grants no settlement authority.
+-- Store evidence digests, not raw credentials or sensitive provider payloads.
+CREATE TABLE IF NOT EXISTS ecc_provider_reconciliation_events (
+  event_id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL
+    REFERENCES ecc_provider_executions(execution_id),
+  account_id TEXT NOT NULL REFERENCES ecc_accounts(id),
+  actor_id TEXT NOT NULL,
+  evidence_hash TEXT NOT NULL CHECK (
+    evidence_hash ~ '^[a-f0-9]{64}$'
+  ),
+  event_type TEXT NOT NULL CHECK (
+    event_type IN ('evidence_received', 'review_note')
+  ),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ecc_reconciliation_execution
+  ON ecc_provider_reconciliation_events(execution_id, created_at);
+
+-- Defense in depth against accidental modification through ordinary SQL.
+-- Database owners / migration administrators retain privileged control.
+CREATE OR REPLACE FUNCTION ecc_prevent_reconciliation_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $ecc$
+BEGIN
+  RAISE EXCEPTION 'reconciliation_audit_immutable';
+END;
+$ecc$;
+
+DO $ecc$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgname = 'ecc_reconciliation_append_only'
+      AND tgrelid =
+        'ecc_provider_reconciliation_events'::regclass
+      AND NOT tgisinternal
+  ) THEN
+    CREATE TRIGGER ecc_reconciliation_append_only
+    BEFORE UPDATE OR DELETE
+    ON ecc_provider_reconciliation_events
+    FOR EACH ROW
+    EXECUTE FUNCTION ecc_prevent_reconciliation_mutation();
+  END IF;
+END;
+$ecc$;

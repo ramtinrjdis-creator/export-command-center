@@ -6,6 +6,7 @@ import { getPostgresPool } from "../persistence/postgres";
 import { PostgresUsageStore } from "../persistence/postgres-commercial";
 import { claimProviderExecution } from "../persistence/provider-execution";
 import { settleProviderExecution } from "../persistence/provider-settlement";
+import { recordReconciliationEvidence } from "../persistence/provider-reconciliation";
 
 const url = process.env.ECC_TEST_DATABASE_URL;
 const enabled = Boolean(url);
@@ -464,6 +465,95 @@ describe.skipIf(!enabled)("V16.8G real PostgreSQL integration", () => {
     expect(state.rows).toEqual([{
       reservation: "reserved",
       execution: "pending",
+      committed: 0,
+      reserved: 2,
+    }]);
+  });
+
+
+  it("enforces append-only reconciliation without changing financial state", async () => {
+    const sc = scope("integration-user-a", "ig-reconciliation");
+
+    expect((await reserve(
+      sc.userId, sc.periodKey, "ig-audit-r", 2,
+    )).accepted).toBe(true);
+
+    expect((await claimProviderExecution({
+      executionId: "ig-audit-e",
+      reservationId: "ig-audit-r",
+      accountId: sc.accountId,
+      userId: sc.userId,
+      provider: "integration-provider",
+      requestHash: "a".repeat(64),
+    })).created).toBe(true);
+
+    expect((await settleProviderExecution({
+      scope: sc,
+      reservationId: "ig-audit-r",
+      executionId: "ig-audit-e",
+      outcome: "reconciliation_required",
+    })).applied).toBe(true);
+
+    const evidence = {
+      eventId: "ig-audit-event",
+      executionId: "ig-audit-e",
+      accountId: sc.accountId,
+      actorId: "integration-reviewer",
+      evidenceHash: "b".repeat(64),
+      eventType: "evidence_received" as const,
+    };
+
+    expect(await recordReconciliationEvidence(evidence))
+      .toEqual({ created: true });
+
+    expect(await recordReconciliationEvidence(evidence))
+      .toEqual({ created: false });
+
+    await expect(recordReconciliationEvidence({
+      ...evidence,
+      evidenceHash: "c".repeat(64),
+    })).rejects.toThrow("reconciliation_event_identity_conflict");
+
+    const count = await db.query(`
+      SELECT count(*)::int AS total
+      FROM ecc_provider_reconciliation_events
+      WHERE execution_id = 'ig-audit-e'
+    `);
+
+    expect(count.rows[0].total).toBe(1);
+
+    await expect(db.query(`
+      UPDATE ecc_provider_reconciliation_events
+      SET evidence_hash = $1
+      WHERE event_id = $2
+    `, ["d".repeat(64), evidence.eventId]))
+      .rejects.toThrow("reconciliation_audit_immutable");
+
+    await expect(db.query(`
+      DELETE FROM ecc_provider_reconciliation_events
+      WHERE event_id = $1
+    `, [evidence.eventId]))
+      .rejects.toThrow("reconciliation_audit_immutable");
+
+    const state = await db.query(`
+      SELECT r.status AS reservation,
+             e.status AS execution,
+             c.committed::int AS committed,
+             c.reserved::int AS reserved
+      FROM ecc_usage_reservations r
+      JOIN ecc_provider_executions e
+        ON e.reservation_id = r.reservation_id
+      JOIN ecc_usage_counters c
+        ON c.account_id = r.account_id
+       AND c.user_id = r.user_id
+       AND c.capability = r.capability
+       AND c.period_key = r.period_key
+      WHERE r.reservation_id = 'ig-audit-r'
+    `);
+
+    expect(state.rows).toEqual([{
+      reservation: "reserved",
+      execution: "reconciliation_required",
       committed: 0,
       reserved: 2,
     }]);
